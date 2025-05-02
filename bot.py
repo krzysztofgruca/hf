@@ -1058,6 +1058,5 @@ async def cooldown_error(interaction: discord.Interaction, error):
 
 # Uruchomienie bota
 import os
-
-bot.run(os.getenv("MTM1OTU5NTI4NTcyMTkwNzQzMw.Gr2Udr.DWN2yQNt12FxOXrSbpeh2tszfLWBxIYX-RW5hw"))
+bot.run(os.getenv("DISCORD_TOKEN"))
 
