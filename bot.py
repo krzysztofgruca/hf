@@ -208,10 +208,10 @@ async def start_kable(interaction: discord.Interaction):
 # --- Statystyki i UI ---
 def generuj_raport(user_data):
     emoji_map = {
-        "green": "🌿 kurier green",
-        "blue": "💙 kurier blue",
-        "white": "🤍 kurier white",
-        "cenna": "🔫 cenna partia",
+        "green": "🌿 green",
+        "blue": "💙 blue",
+        "white": "🤍 white",
+        "cenna": "🔫 cenna",
         "spisek": "🧠 spisek",
         "kable": "📦 kable",
         "capt": "⚔️ capt",
@@ -237,7 +237,7 @@ def generuj_raport(user_data):
         aktywnosci_text = " | ".join(aktywne)
 
         linia = (
-            "━━━\n"
+            "━\n"
             f"{prefix} **<@{uid}>**\n"
             f"{aktywnosci_text}\n"
             f"🔢 **Suma punktów:** {data['punkty']}"
