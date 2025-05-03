@@ -62,6 +62,9 @@ class AFK(commands.Cog):
         if user_id in afk_users:
             return await interaction.response.send_message("Już jesteś oznaczony jako AFK!", ephemeral=True)
 
+        # 🔧 FIX: szybka odpowiedź do Discorda
+        await interaction.response.defer(ephemeral=True)
+
         start_time = datetime.now()
         afk_users[user_id] = start_time
         view = AfkView(user_id)
@@ -74,12 +77,13 @@ class AFK(commands.Cog):
 
         afk_channel = discord.utils.get(interaction.guild.text_channels, name="😴┃afk")
         if not afk_channel:
-            return await interaction.response.send_message("Nie mogę znaleźć kanału 😴┃afk!", ephemeral=True)
+            return await interaction.followup.send("Nie mogę znaleźć kanału 😴┃afk!", ephemeral=True)
 
         message = await afk_channel.send(embed=embed, view=view)
         view.message = message
         self.bot.add_view(view)
-        await interaction.response.send_message("Zostałeś oznaczony jako AFK.", ephemeral=True)
+
+        await interaction.followup.send("Zostałeś oznaczony jako AFK.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AFK(bot))
