@@ -1056,7 +1056,15 @@ async def cooldown_error(interaction: discord.Interaction, error):
             ephemeral=True
         )
 
-# Uruchomienie bota
+# Uruchomienie bota z AFK jako moduł
+
 import os
-bot.run(os.getenv("DISCORD_TOKEN"))
+import asyncio
+
+async def main():
+    async with bot:
+        await bot.load_extension("afk")  # załaduj cog afk.py
+        await bot.start(os.getenv("DISCORD_TOKEN"))
+
+asyncio.run(main())
 
