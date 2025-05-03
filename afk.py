@@ -32,6 +32,7 @@ class AfkView(discord.ui.View):
 class AFK(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.bot.tree.add_command(self.afk)  # ← DODAJ TO!
         self.update_afk_embeds.start()
 
     def cog_unload(self):
