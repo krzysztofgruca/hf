@@ -864,6 +864,22 @@ class LotteryView(View):
         )
 
         await odswiez_loterie(interaction.guild)
+        
+        @discord.ui.button(label="🔄 Resetuj Loterię", style=discord.ButtonStyle.danger)
+        async def reset_loterii(self, interaction: discord.Interaction, button: Button):
+            role_names = [role.name.lower() for role in interaction.user.roles]
+            if "lider" not in role_names and "zarząd" not in role_names:
+                await interaction.response.send_message("❌ Tylko Lider lub Zarząd może resetować loterię.", ephemeral=True)
+                return
+            await interaction.response.send_modal(ResetLoteriiModal(interaction, self))
+
+    @discord.ui.button(label="🏁 Zakończ Loterię", style=discord.ButtonStyle.primary)
+    async def finish_loteria(self, interaction: discord.Interaction, button: Button):
+            role_names = [role.name.lower() for role in interaction.user.roles]
+            if "lider" not in role_names and "zarząd" not in role_names:
+                await interaction.response.send_message("❌ Tylko Lider lub Zarząd może zakończyć loterię.", ephemeral=True)
+                return
+            await interaction.response.send_modal(ZakonczenieLoteriiModal(interaction, self))
 
 @tree.command(name="loteria", description="Utwórz wiadomość loterii z przyciskiem do zapisu")
 async def loteria(interaction: discord.Interaction):
@@ -1061,7 +1077,39 @@ async def cooldown_error(interaction: discord.Interaction, error):
             ephemeral=True
         )
 
-# Uruchomienie bota z AFK jako moduł
+class ResetLoteriiModal(discord.ui.Modal, title="Reset Loterii"):
+    kod = discord.ui.TextInput(label="Wpisz hasło", placeholder="np. LoteriaHeaven", required=True)
+
+    def __init__(self, interaction, view):
+        super().__init__()
+        self.interaction = interaction
+        self.view = view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.kod.value != "LoteriaHeaven":
+            await interaction.response.send_message("❌ Niepoprawny kod resetu.", ephemeral=True)
+            return
+
+        guild_id = self.interaction.guild.id
+        user = interaction.user
+        czas = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        lottery_participants[guild_id] = set()
+        if guild_id in lottery_messages:
+            del lottery_messages[guild_id]
+        save_lottery_data()
+
+        kanal = discord.utils.get(self.interaction.guild.text_channels, name="🎰┃loteria")
+        if kanal:
+            async for msg in kanal.history(limit=20):
+                if msg.author == self.interaction.client.user:
+                    await msg.delete()
+
+        await loteria(self.interaction)
+        await interaction.response.send_message("✅ Loteria została zresetowana!", ephemeral=True)
+
+        print(f"[{czas}] 🔁 RESET LOTERII przez {user.name} ({user.id}) na serwerze {self.interaction.guild.name}")
+
 
 import os
 import asyncio
