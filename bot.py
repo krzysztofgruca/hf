@@ -2,9 +2,14 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time  # dodaj też `time`
 import asyncio
 import random
+
+# 🌀 GODZINA CHAOSU
+godzina_chaosu = None  # zaplanowana godzina
+aktywny_chaos = False  # czy aktualnie trwa
+
 cooldowns_kurier = {}  # {user_id: datetime}
 from discord.ui import View, Button
 
@@ -658,9 +663,7 @@ from discord.ext import tasks
 @tasks.loop(minutes=1)
 async def przypomnienie_cenna():
     await bot.wait_until_ready()
-
-    teraz = datetime.now()  # używa lokalnego czasu systemu (czyli UK, jeśli serwer tak działa)
-
+    teraz = datetime.now()
     if teraz.hour == 13 and teraz.minute == 0:
         for guild in bot.guilds:
             kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
@@ -694,6 +697,43 @@ async def ogloszenie_top_usera():
                 f"🚀 Dołącz do rywalizacji – każda aktywność się liczy!"
             )
 
+@tasks.loop(minutes=1)
+async def chaos_loop():
+    global aktywny_chaos, godzina_chaosu
+    teraz = datetime.now().time()
+
+    if godzina_chaosu and teraz.hour == godzina_chaosu.hour and teraz.minute == godzina_chaosu.minute:
+        aktywny_chaos = True
+        for guild in bot.guilds:
+            kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+            if kanal:
+                await kanal.send("@everyone ⚠️ **GODZINA CHAOSU ROZPOCZĘTA!**\n"
+                                 "Wszystkie kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` dają **x3 punkty** przez 60 minut!")
+        await asyncio.sleep(60 * 60)  # 60 minut
+        aktywny_chaos = False
+        for guild in bot.guilds:
+            kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+            if kanal:
+                await kanal.send("✅ **Godzina chaosu zakończona!** Wszystko wraca do normy.")
+        godzina_chaosu = None
+
+@tasks.loop(minutes=1)
+async def losuj_godzine_chaosu():
+    global godzina_chaosu
+    teraz = datetime.now()
+    
+    if teraz.hour == 0 and teraz.minute == 0:
+        losowa_godzina = random.randint(8, 22)
+        losowa_minuta = random.randint(0, 59)
+        godzina_chaosu = datetime.strptime(f"{losowa_godzina}:{losowa_minuta}", "%H:%M").time()
+
+        for guild in bot.guilds:
+            kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+            if kanal:
+                await kanal.send(f"📢 **Godzina Chaosu** została wylosowana!\n"
+                                 f"🎲 Dziś kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` będą liczone x3 "
+                                 f"w godzinie **{godzina_chaosu.strftime('%H:%M')} - {((datetime.combine(datetime.today(), godzina_chaosu) + timedelta(hours=1)).time().strftime('%H:%M'))}**!")
+
 @bot.event
 async def on_ready():
     await tree.sync()
@@ -714,6 +754,8 @@ async def on_ready():
     uruchom_loterie.start()
     przypomnienie_cenna.start()
     ogloszenie_top_usera.start()
+    chaos_loop.start()               
+    losuj_godzine_chaosu.start()     
 
     # 💾 Zapisz dane po synchronizacji
     save_lottery_data()
@@ -870,6 +912,26 @@ async def biuroall(interaction: discord.Interaction):
     for _ in range(5):
         await kanal.send("@everyone 🚨 **Rozpoczęliśmy CAPT!** Wszyscy obowiązkowo na zbiórkę do biura! 🏃‍♂️🏃‍♀️")
         await asyncio.sleep(5)
+
+@tree.command(name="godzinachaosu", description="Zobacz kiedy przypada dzisiejsza Godzina Chaosu")
+@app_commands.checks.has_any_role("Leader", "Zarząd")
+async def godzinachaosu(interaction: discord.Interaction):
+    global godzina_chaosu, aktywny_chaos
+
+    if aktywny_chaos:
+        await interaction.response.send_message("🌀 **Godzina Chaosu trwa właśnie teraz!**", ephemeral=True)
+    elif godzina_chaosu:
+        await interaction.response.send_message(
+            f"🕒 Dzisiejsza **Godzina Chaosu** została zaplanowana na: **{godzina_chaosu.strftime('%H:%M')}**",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message("❗ Godzina Chaosu jeszcze nie została wylosowana.", ephemeral=True)
+
+@godzinachaosu_error
+async def godzinachaosu_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingAnyRole):
+        await interaction.response.send_message("❌ Nie masz uprawnień do tej komendy.", ephemeral=True)
 
 from discord.ext import tasks
 
