@@ -190,6 +190,7 @@ async def spisek(interaction: discord.Interaction):
         f"🧠 **Rozpoczęto kontrakt spisek!**\nInicjator: {interaction.user.mention}\nZalecane min. 2 osoby.",
         view=view
     )
+    view.kontrakt_msg = msg
     active_spisek_contracts[interaction.guild.id]["msg_id"] = msg.id
     await interaction.response.send_message("Spisek został aktywowany!", ephemeral=True)
 
@@ -557,20 +558,39 @@ class SpisekKontraktView(View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.inicjator = interaction.user
+        self.kontrakt_msg = None
         active_spisek_contracts[guild_id] = {
             "inicjator": self.inicjator,
             "uczestnicy": set([self.inicjator.id]),
             "msg_id": None,
         }
 
-    @discord.ui.button(label="🧠 Dołącz do spisku", style=discord.ButtonStyle.primary, custom_id="spisek_join")
+    async def update_message(self, channel):
+        kontrakt = active_spisek_contracts[self.guild_id]
+        uczestnicy = kontrakt["uczestnicy"]
+        mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy)
+
+        content = (
+            f"🧠 **Rozpoczęto kontrakt spisek!**\n"
+            f"👤 Inicjator: {self.inicjator.mention}\n"
+            f"👥 Uczestnicy ({len(uczestnicy)}): {mentions}\n"
+            f"Zalecane min. 2 osoby."
+        )
+
+        if self.kontrakt_msg:
+            try:
+                await self.kontrakt_msg.edit(content=content, view=self)
+            except:
+                pass
+
+    @discord.ui.button(label="🧠 Dołącz do spisku", style=discord.ButtonStyle.primary)
     async def join_spisek(self, interaction: discord.Interaction, button: Button):
         kontrakt = active_spisek_contracts[self.guild_id]
         kontrakt["uczestnicy"].add(interaction.user.id)
-        print(f"[SPOISK] {interaction.user} dołączył do spisku.")
-        await interaction.response.send_message(f"✅ {interaction.user.mention} dołączył do spisku.", ephemeral=True)
+        await interaction.response.send_message("✅ Dołączyłeś do spisku.", ephemeral=True)
+        await self.update_message(interaction.channel)
 
-    @discord.ui.button(label="🚪 Opuść spisek", style=discord.ButtonStyle.secondary, custom_id="spisek_leave")
+    @discord.ui.button(label="🚪 Opuść spisek", style=discord.ButtonStyle.secondary)
     async def leave_spisek(self, interaction: discord.Interaction, button: Button):
         kontrakt = active_spisek_contracts[self.guild_id]
         if interaction.user.id in kontrakt["uczestnicy"]:
@@ -578,8 +598,9 @@ class SpisekKontraktView(View):
             await interaction.response.send_message("👋 Opuściłeś spisek.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Nie jesteś zapisany do spisku.", ephemeral=True)
+        await self.update_message(interaction.channel)
 
-    @discord.ui.button(label="✅ Zakończ spisek", style=discord.ButtonStyle.success, custom_id="spisek_finish")
+    @discord.ui.button(label="✅ Zakończ spisek", style=discord.ButtonStyle.success)
     async def finish_spisek(self, interaction: discord.Interaction, button: Button):
         kontrakt = active_spisek_contracts.get(self.guild_id)
         if not kontrakt or kontrakt["inicjator"].id != interaction.user.id:
@@ -595,17 +616,29 @@ class SpisekKontraktView(View):
         with open("dane.json", "w") as f:
             json.dump(user_data, f)
 
-        uczestnicy_mentions = ", ".join([f"<@{uid}>" for uid in uczestnicy])
+        mentions = ", ".join([f"<@{uid}>" for uid in uczestnicy])
         embed = discord.Embed(
             title="🧠 Spisek zakończony",
             description=(
                 f"Kontrakt **spisek** został zakończony przez inicjatora.\n\n"
                 f"👤 **Inicjator:** {kontrakt['inicjator'].mention}\n"
-                f"👥 **Uczestnicy:** {uczestnicy_mentions}\n\n"
+                f"👥 **Uczestnicy:** {mentions}\n\n"
                 f"🔎 Zalecana liczba uczestników: 2+\n🎉 Punkty przyznane!"
             ),
             color=0x9b59b6
         )
+
+        kanal = interaction.channel
+        if kontrakt["msg_id"]:
+            try:
+                await self.kontrakt_msg.edit(content="", embed=embed, view=None)
+            except:
+                await kanal.send(embed=embed)
+        else:
+            await kanal.send(embed=embed)
+
+        del active_spisek_contracts[self.guild_id]
+        await odswiez_statystyki(interaction.guild)
 
         kanal = interaction.channel
         if kontrakt["msg_id"]:
