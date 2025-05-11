@@ -412,7 +412,7 @@ class KableKontraktView(View):
     @discord.ui.button(label="✅ Zakończ kontrakt", style=discord.ButtonStyle.success)
     async def finish_button(self, interaction: discord.Interaction, button: Button):
         kontrakt = active_kable_contracts.get(self.guild_id)
-                if not kontrakt:
+        if not kontrakt:
             await interaction.response.send_message("❌ Nie znaleziono aktywnego kontraktu.", ephemeral=True)
             return
 
