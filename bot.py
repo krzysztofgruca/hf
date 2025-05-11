@@ -172,6 +172,7 @@ async def cenna(interaction: discord.Interaction):
                 f"Kliknij przycisk, aby dołączyć do kontraktu. Potrzeba minimum 2 osób.",
         view=view
     )
+    view.kontrakt_msg = msg 
     active_cenna_contracts[interaction.guild.id]["msg_id"] = msg.id
     await interaction.response.send_message("📌 Kontrakt cenna został utworzony!", ephemeral=True)
 
@@ -464,17 +465,36 @@ class CennaKontraktView(View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.inicjator = interaction.user
+        self.kontrakt_msg = None
         active_cenna_contracts[guild_id] = {
             "inicjator": self.inicjator,
             "uczestnicy": set([self.inicjator.id]),
             "msg_id": None,
         }
 
+    async def update_message(self, channel):
+        kontrakt = active_cenna_contracts[self.guild_id]
+        uczestnicy = kontrakt["uczestnicy"]
+        mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy)
+
+        content = (
+            f"🔫 **Kontrakt CENNA rozpoczęty przez {self.inicjator.mention}!**\n"
+            f"👥 Uczestnicy ({len(uczestnicy)}): {mentions}\n"
+            f"Kliknij przycisk, aby dołączyć do kontraktu. Potrzeba minimum 2 osób."
+        )
+
+        if self.kontrakt_msg:
+            try:
+                await self.kontrakt_msg.edit(content=content, view=self)
+            except:
+                pass
+
     @discord.ui.button(label="📥 Zapisz się na cenną", style=discord.ButtonStyle.primary)
     async def join_button(self, interaction: discord.Interaction, button: Button):
         kontrakt = active_cenna_contracts[self.guild_id]
         kontrakt["uczestnicy"].add(interaction.user.id)
         await interaction.response.send_message("✅ Dołączyłeś do kontraktu cenna.", ephemeral=True)
+        await self.update_message(interaction.channel)
 
     @discord.ui.button(label="📤 Opuść cenną", style=discord.ButtonStyle.secondary)
     async def leave_button(self, interaction: discord.Interaction, button: Button):
@@ -484,6 +504,7 @@ class CennaKontraktView(View):
             await interaction.response.send_message("🚪 Opuściłeś kontrakt cenna.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Nie jesteś zapisany do tego kontraktu.", ephemeral=True)
+        await self.update_message(interaction.channel)
 
     @discord.ui.button(label="✅ Zakończ kontrakt", style=discord.ButtonStyle.success)
     async def finish_button(self, interaction: discord.Interaction, button: Button):
@@ -520,8 +541,7 @@ class CennaKontraktView(View):
         kanal = interaction.channel
         if kontrakt["msg_id"]:
             try:
-                old_msg = await kanal.fetch_message(kontrakt["msg_id"])
-                await old_msg.edit(content="", embed=embed, view=None)
+                await self.kontrakt_msg.edit(content="", embed=embed, view=None)
             except:
                 await kanal.send(embed=embed)
         else:
@@ -529,8 +549,6 @@ class CennaKontraktView(View):
 
         del active_cenna_contracts[self.guild_id]
         await odswiez_statystyki(interaction.guild)
-
-from discord.ui import View, Button
 
 active_spisek_contracts = {}
 
