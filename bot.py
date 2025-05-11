@@ -928,10 +928,13 @@ async def godzinachaosu(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("❗ Godzina Chaosu jeszcze nie została wylosowana.", ephemeral=True)
 
-@godzinachaosu_error
+@godzinachaosu.error
 async def godzinachaosu_error(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.errors.MissingAnyRole):
-        await interaction.response.send_message("❌ Nie masz uprawnień do tej komendy.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ Tylko użytkownicy z rolą `Leader` lub `Zarząd` mogą sprawdzić Godzinę Chaosu.",
+            ephemeral=True
+        )
 
 from discord.ext import tasks
 
