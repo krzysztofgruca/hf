@@ -412,8 +412,13 @@ class KableKontraktView(View):
     @discord.ui.button(label="✅ Zakończ kontrakt", style=discord.ButtonStyle.success)
     async def finish_button(self, interaction: discord.Interaction, button: Button):
         kontrakt = active_kable_contracts.get(self.guild_id)
-        if not kontrakt or kontrakt["inicjator"].id != interaction.user.id:
-            await interaction.response.send_message("❌ Tylko inicjator może zakończyć kontrakt.", ephemeral=True)
+        if not kontrakt:
+            await interaction.response.send_message("❌ Nie znaleziono aktywnego kontraktu.", ephemeral=True)
+            return
+
+     role_names = [role.name.lower() for role in interaction.user.roles]
+        if interaction.user.id != kontrakt["inicjator"].id and "lider" not in role_names:
+            await interaction.response.send_message("❌ Tylko inicjator lub użytkownik z rolą `Lider` może zakończyć kontrakt.", ephemeral=True)
             return
 
         uczestnicy = kontrakt["uczestnicy"]
