@@ -129,7 +129,6 @@ async def green(interaction: discord.Interaction):
     uid = str(interaction.user.id)
     teraz = datetime.utcnow()
 
-    # Sprawdź cooldown
     ostatni = cooldowns_kurier.get(uid)
     if ostatni and teraz - ostatni < timedelta(minutes=15):
         pozostalo = timedelta(minutes=15) - (teraz - ostatni)
@@ -140,11 +139,10 @@ async def green(interaction: discord.Interaction):
         )
         return
 
-    # Ustaw cooldown
     cooldowns_kurier[uid] = teraz
-
     punkty = 3 if aktywny_chaos else 1
-    await zakoncz_kontrakt(interaction, "kurier_green", 1, "green", "🌿", 0x00ff00)
+    await zakoncz_kontrakt(interaction, "kurier_green", punkty, "green", "🌿", 0x00ff00)
+
 
 @tree.command(name="kurierblue", description="Zakończ kontrakt blue (+1 pkt)")
 async def blue(interaction: discord.Interaction):
@@ -162,15 +160,15 @@ async def blue(interaction: discord.Interaction):
         return
 
     cooldowns_kurier[f"blue_{uid}"] = teraz
+    punkty = 3 if aktywny_chaos else 1
+    await zakoncz_kontrakt(interaction, "kurier_blue", punkty, "blue", "💙", 0x3498db)
 
-    punkty = 4 if aktywny_chaos else 1
-    await zakoncz_kontrakt(interaction, "kurier_blue", 1, "blue", "💙", 0x3498db)
 
 @tree.command(name="kurierwhite", description="Zakończ kontrakt white (+1 pkt)")
-@commands.cooldown(1, 900, commands.BucketType.user)  # ← cooldown 15 minut na użytkownika
+@commands.cooldown(1, 900, commands.BucketType.user)
 async def white(interaction: discord.Interaction):
-    punkty = 5 if aktywny_chaos else 1
-    await zakoncz_kontrakt(interaction, "kurier_white", 1, "white", "🤍", 0xffffff)
+    punkty = 3 if aktywny_chaos else 1
+    await zakoncz_kontrakt(interaction, "kurier_white", punkty, "white", "🤍", 0xffffff)
 
 @tree.command(name="cenna", description="Rozpocznij kontrakt cenna (grupowy, min. 2 osoby)")
 async def cenna(interaction: discord.Interaction):
