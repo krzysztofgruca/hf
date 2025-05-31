@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import json
 import pytz
+londyn = pytz.timezone("Europe/London")
 from datetime import datetime, timedelta, time  # dodaj też `time`
 import asyncio
 import random
@@ -702,7 +703,7 @@ async def ogloszenie_top_usera():
 @tasks.loop(minutes=1)
 async def chaos_loop():
     global aktywny_chaos, godzina_chaosu
-    teraz = datetime.now()
+    teraz = datetime.now(londyn)
 
     print(f"[CHAOS DEBUG] teraz={teraz.strftime('%H:%M')}, godzina_chaosu={godzina_chaosu}")
 
@@ -735,7 +736,7 @@ async def zakonczzenie_chaosu():
 @tasks.loop(minutes=1)
 async def losuj_godzine_chaosu():
     global godzina_chaosu
-    teraz = datetime.now()
+    teraz = datetime.now(londyn)
 
     if godzina_chaosu is None:
         losowa_godzina = random.randint(14, 20)  # <-- zmieniony zakres
