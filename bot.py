@@ -703,28 +703,33 @@ async def chaos_loop():
     global aktywny_chaos, godzina_chaosu
     teraz = datetime.now()
 
+    print(f"[CHAOS DEBUG] teraz={teraz.strftime('%H:%M')}, godzina_chaosu={godzina_chaosu}")
+
     if godzina_chaosu and teraz.hour == godzina_chaosu.hour and teraz.minute == godzina_chaosu.minute:
         if not aktywny_chaos:
             aktywny_chaos = True
-            print("🔥 Chaos rozpoczęty!")
+            print("[CHAOS] Godzina Chaosu rozpoczęta!")
+
             for guild in bot.guilds:
                 kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
                 if kanal:
                     await kanal.send("@everyone ⚠️ **GODZINA CHAOSU ROZPOCZĘTA!**\n"
                                      "Wszystkie kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` dają **x3 punkty** przez 60 minut!")
-            # ustaw zakończenie chaosu za 1h
+
             asyncio.create_task(zakonczenie_chaosu())
 
-async def zakonczenie_chaosu():
+async def zakonczzenie_chaosu():
     global aktywny_chaos, godzina_chaosu
-    await asyncio.sleep(60 * 60)
+    await asyncio.sleep(60 * 60)  # 60 minut
     aktywny_chaos = False
     godzina_chaosu = None
-    print("✅ Chaos zakończony!")
+    print("[CHAOS] Chaos zakończony.")
+
     for guild in bot.guilds:
         kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
         if kanal:
             await kanal.send("✅ **Godzina Chaosu zakończona!** Wszystko wraca do normy.")
+
 
 @tasks.loop(minutes=1)
 async def losuj_godzine_chaosu():
@@ -732,9 +737,11 @@ async def losuj_godzine_chaosu():
     teraz = datetime.now()
 
     if godzina_chaosu is None:
-        losowa_godzina = random.randint(8, 22)
+        losowa_godzina = random.randint(14, 20)  # <-- zmieniony zakres
         losowa_minuta = random.randint(0, 59)
         godzina_chaosu = datetime.strptime(f"{losowa_godzina}:{losowa_minuta}", "%H:%M").time()
+
+        print(f"[CHAOS] Wylosowano: {godzina_chaosu.strftime('%H:%M')}")
 
         for guild in bot.guilds:
             kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
@@ -743,7 +750,7 @@ async def losuj_godzine_chaosu():
                     f"📢 **Godzina Chaosu** została wylosowana!\n"
                     f"🎲 Kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` będą liczone x3 "
                     f"w godzinie **{godzina_chaosu.strftime('%H:%M')} - "
-                    f"{((datetime.combine(datetime.today(), godzina_chaosu) + timedelta(hours=1)).time().strftime('%H:%M'))}**!"
+                    f"{(datetime.combine(datetime.today(), godzina_chaosu) + timedelta(hours=1)).time().strftime('%H:%M')}**!"
                 )
                 
 @bot.event
