@@ -703,7 +703,7 @@ async def ogloszenie_top_usera():
 @tasks.loop(minutes=1)
 async def chaos_loop():
     global aktywny_chaos, godzina_chaosu
-    teraz = datetime.now(londyn)
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw"))
 
     print(f"[CHAOS DEBUG] teraz={teraz.strftime('%H:%M')}, godzina_chaosu={godzina_chaosu}")
 
@@ -736,7 +736,7 @@ async def zakonczzenie_chaosu():
 @tasks.loop(minutes=1)
 async def losuj_godzine_chaosu():
     global godzina_chaosu
-    teraz = datetime.now(londyn)
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw"))
 
     if godzina_chaosu is None:
         losowa_godzina = random.randint(14, 20)  # <-- zmieniony zakres
