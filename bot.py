@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import json
+import pytz
 from datetime import datetime, timedelta, time  # dodaj też `time`
 import asyncio
 import random
