@@ -746,6 +746,11 @@ async def on_ready():
     print(f"✅ Zalogowano jako {bot.user}")
     print("📤 Komendy zostały zsynchronizowane globalnie.")
 
+    # TESTOWE WYMUSZENIE GODZINY CHAOSU
+    from datetime import datetime, timedelta
+    godzina_chaosu = (datetime.now() + timedelta(minutes=1)).time()
+    print(f"[DEBUG] Ustawiono testową godzinę chaosu na: {godzina_chaosu}")
+
     # 🔄 Wczytaj dane loterii z pliku
     load_lottery_data()
     print("📂 Dane loterii wczytane:", lottery_participants)
