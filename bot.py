@@ -746,22 +746,20 @@ async def on_ready():
     print(f"✅ Zalogowano jako {bot.user}")
     print("📤 Komendy zostały zsynchronizowane globalnie.")
 
-    # TESTOWE WYMUSZENIE GODZINY CHAOSU
+    # 🌀 TESTOWE WYMUSZENIE GODZINY CHAOSU
     from datetime import datetime, timedelta
+    global godzina_chaosu
     godzina_chaosu = (datetime.now() + timedelta(minutes=1)).time()
     print(f"[DEBUG] Ustawiono testową godzinę chaosu na: {godzina_chaosu}")
 
-    # 🔄 Wczytaj dane loterii z pliku
+    # 📂 Wczytaj dane loterii z pliku
     load_lottery_data()
     print("📂 Dane loterii wczytane:", lottery_participants)
 
-    # 🔁 Przywróć widoki do istniejących wiadomości loterii (jeśli bot się zrestartował)
+    # 🔁 Przywróć widoki do istniejących wiadomości loterii
     for guild in bot.guilds:
         if guild.id in lottery_messages:
             bot.add_view(LotteryView(guild.id))
-
-    global godzina_chaosu
-    godzina_chaosu = datetime.now().time()
 
     # 🚀 Uruchom zaplanowane zadania
     przypomnienie_loteria.start()
