@@ -143,7 +143,7 @@ async def green(interaction: discord.Interaction):
     # Ustaw cooldown
     cooldowns_kurier[uid] = teraz
 
-    # Wykonaj kontrakt
+    punkty = 3 if aktywny_chaos else 1
     await zakoncz_kontrakt(interaction, "kurier_green", 1, "green", "🌿", 0x00ff00)
 
 @tree.command(name="kurierblue", description="Zakończ kontrakt blue (+1 pkt)")
@@ -162,11 +162,14 @@ async def blue(interaction: discord.Interaction):
         return
 
     cooldowns_kurier[f"blue_{uid}"] = teraz
+
+    punkty = 4 if aktywny_chaos else 1
     await zakoncz_kontrakt(interaction, "kurier_blue", 1, "blue", "💙", 0x3498db)
 
 @tree.command(name="kurierwhite", description="Zakończ kontrakt white (+1 pkt)")
 @commands.cooldown(1, 900, commands.BucketType.user)  # ← cooldown 15 minut na użytkownika
 async def white(interaction: discord.Interaction):
+    punkty = 5 if aktywny_chaos else 1
     await zakoncz_kontrakt(interaction, "kurier_white", 1, "white", "🤍", 0xffffff)
 
 @tree.command(name="cenna", description="Rozpocznij kontrakt cenna (grupowy, min. 2 osoby)")
@@ -721,8 +724,8 @@ async def chaos_loop():
 async def losuj_godzine_chaosu():
     global godzina_chaosu
     teraz = datetime.now()
-    
-    if teraz.hour == 0 and teraz.minute == 0:
+
+    if godzina_chaosu is None:
         losowa_godzina = random.randint(8, 22)
         losowa_minuta = random.randint(0, 59)
         godzina_chaosu = datetime.strptime(f"{losowa_godzina}:{losowa_minuta}", "%H:%M").time()
@@ -730,10 +733,13 @@ async def losuj_godzine_chaosu():
         for guild in bot.guilds:
             kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
             if kanal:
-                await kanal.send(f"📢 **Godzina Chaosu** została wylosowana!\n"
-                                 f"🎲 Dziś kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` będą liczone x3 "
-                                 f"w godzinie **{godzina_chaosu.strftime('%H:%M')} - {((datetime.combine(datetime.today(), godzina_chaosu) + timedelta(hours=1)).time().strftime('%H:%M'))}**!")
-
+                await kanal.send(
+                    f"📢 **Godzina Chaosu** została wylosowana!\n"
+                    f"🎲 Kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` będą liczone x3 "
+                    f"w godzinie **{godzina_chaosu.strftime('%H:%M')} - "
+                    f"{((datetime.combine(datetime.today(), godzina_chaosu) + timedelta(hours=1)).time().strftime('%H:%M'))}**!"
+                )
+                
 @bot.event
 async def on_ready():
     await tree.sync()
@@ -748,6 +754,9 @@ async def on_ready():
     for guild in bot.guilds:
         if guild.id in lottery_messages:
             bot.add_view(LotteryView(guild.id))
+
+    global godzina_chaosu
+    godzina_chaosu = datetime.now().time()
 
     # 🚀 Uruchom zaplanowane zadania
     przypomnienie_loteria.start()
