@@ -1011,31 +1011,6 @@ class LotteryView(View):
             return
             await interaction.response.send_modal(ResetLoteriiModal(interaction, self))
 
-    @discord.ui.button(label="🏁 Zakończ Loterię", style=discord.ButtonStyle.primary, custom_id="end_loteria")
-    async def finish_loteria(self, interaction: discord.Interaction, button: Button):
-        role_names = [role.name.lower() for role in interaction.user.roles]
-        if "lider" not in role_names and "zarząd" not in role_names:
-            await interaction.response.send_message("❌ Tylko Lider lub Zarząd może zakończyć loterię.", ephemeral=True)
-            return
-
-        uczestnicy = lottery_participants.get(self.guild_id, set())
-        if not uczestnicy:
-            await interaction.response.send_message("🎰 Loteria zakończona – brak uczestników.", ephemeral=True)
-            return
-
-        zwyciezca = random.choice(list(uczestnicy))
-        wynik = (
-            f"🎉 **WYNIKI LOTERII (zakończona ręcznie)**\n"
-            f"Nagrodę **50k** zgarnia: <@{zwyciezca}>!\n"
-            f"Gratulacje i do zobaczenia za tydzień! 🤑"
-    )
-
-        kanal_chat = discord.utils.get(interaction.guild.text_channels, name="💬┃chat-rodzinny")
-        if kanal_chat:
-            await kanal_chat.send(f"@everyone {wynik}")
-
-        await interaction.response.send_message("✅ Loteria została zakończona i ogłoszono zwycięzcę.", ephemeral=True)
-
 @tree.command(name="loteria", description="Utwórz wiadomość loterii z przyciskiem do zapisu")
 async def loteria(interaction: discord.Interaction):
     kanal = discord.utils.get(interaction.guild.text_channels, name="🎰┃loteria")
