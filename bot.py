@@ -1003,14 +1003,17 @@ class LotteryView(View):
 
         await odswiez_loterie(interaction.guild)
 
-   @discord.ui.button(label="🔄 Resetuj Loterię", style=discord.ButtonStyle.danger, custom_id="reset_loteria")
-   async def reset_loterii(self, interaction: discord.Interaction, button: Button):
-       role_names = [role.name.lower() for role in interaction.user.roles]
-       if "lider" not in role_names and "zarząd" not in role_names:
-           await interaction.response.send_message("❌ Tylko Lider lub Zarząd może resetować loterię.", ephemeral=True)
-           return  # ⛔ zatrzymanie tylko w przypadku braku roli
+    @discord.ui.button(label="🔄 Resetuj Loterię", style=discord.ButtonStyle.danger, custom_id="reset_loteria")
+    async def reset_loterii(self, interaction: discord.Interaction, button: Button):
+        role_names = [role.name.lower() for role in interaction.user.roles]
+        if "lider" not in role_names and "zarząd" not in role_names:
+            await interaction.response.send_message(
+                "❌ Tylko Lider lub Zarząd może resetować loterię.",
+                ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(ResetLoteriiModal(interaction, self))
 
-       await interaction.response.send_modal(ResetLoteriiModal(interaction, self))  # ✅ ta linia musi być POZA blokiem `if`
 
 @tree.command(name="loteria", description="Utwórz wiadomość loterii z przyciskiem do zapisu")
 async def loteria(interaction: discord.Interaction):
