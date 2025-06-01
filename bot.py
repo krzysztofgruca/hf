@@ -755,7 +755,25 @@ async def losuj_godzine_chaosu():
                     f"w godzinie **{godzina_chaosu.strftime('%H:%M')} - "
                     f"{(datetime.combine(datetime.today(), godzina_chaosu) + timedelta(hours=1)).time().strftime('%H:%M')}**!"
                 )
-                
+
+from discord.ext import tasks
+from datetime import datetime, time
+import zoneinfo
+
+@tasks.loop(time=time(8, 0, tzinfo=zoneinfo.ZoneInfo("Europe/Warsaw")))
+async def poranne_powitanie():
+    teraz = datetime.now(zoneinfo.ZoneInfo("Europe/Warsaw"))
+    dzien_tygodnia = teraz.strftime("%A").capitalize()
+    data = teraz.strftime("%d.%m.%Y")
+
+    for guild in bot.guilds:
+        kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+        if kanal:
+            await kanal.send(
+                f"📅 Dziś jest **{dzien_tygodnia}, {data}**\n"
+                f"Życzymy wszystkim udanego dnia i dużo aktywności! 💪🔥"
+            )
+
 @bot.event
 async def on_ready():
     await tree.sync()
@@ -777,7 +795,8 @@ async def on_ready():
     przypomnienie_cenna.start()
     ogloszenie_top_usera.start()
     chaos_loop.start()               
-    losuj_godzine_chaosu.start()     
+    losuj_godzine_chaosu.start()
+    poranne_powitanie.start()
 
     # 💾 Zapisz dane po synchronizacji
     save_lottery_data()
