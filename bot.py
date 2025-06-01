@@ -435,7 +435,7 @@ class KableKontraktView(View):
         for uid in uczestnicy:
             str_uid = str(uid)
             init_user(str_uid)
-            user_data[str_uid]["punkty"] += 1
+            user_data[str_uid]["punkty"] += 3
             user_data[str_uid]["kable"] += 1
 
         with open("dane.json", "w") as f:
@@ -530,7 +530,7 @@ class CennaKontraktView(View):
         for uid in uczestnicy:
             str_uid = str(uid)
             init_user(str_uid)
-            user_data[str_uid]["punkty"] += 2
+            user_data[str_uid]["punkty"] += 5
             user_data[str_uid]["cenna"] += 1
         with open("dane.json", "w") as f:
             json.dump(user_data, f)
@@ -619,7 +619,7 @@ class SpisekKontraktView(View):
         for uid in uczestnicy:
             str_uid = str(uid)
             init_user(str_uid)
-            user_data[str_uid]["punkty"] += 1
+            user_data[str_uid]["punkty"] += 3
             user_data[str_uid]["spisek"] += 1
         with open("dane.json", "w") as f:
             json.dump(user_data, f)
@@ -836,7 +836,7 @@ class CaptView(View):
             description=(
                 f"👤 **Inicjator:** {capt['inicjator'].mention}\n"
                 f"👥 **Uczestnicy ({len(uczestnicy)}):** {mentions}\n\n"
-                f"📌 Za **capt wygrany** każdy uczestnik otrzymuje **2 pkt**, za **przegrany** – **1 pkt**."
+                f"📌 Za **capt wygrany** każdy uczestnik otrzymuje **6 pkt**, za **przegrany** – **2 pkt**."
             ),
             color=0xe74c3c
         )
@@ -904,7 +904,7 @@ class CaptView(View):
                 f"👤 **Inicjator:** {capt['inicjator'].mention}\n"
                 f"👥 **Uczestnicy:** {mentions}\n\n"
                 f"🏁 CAPT został zakończony jako **{wynik}**!\n"
-                f"{'🥇 Każdy otrzymuje 2 pkt!' if wygrana else '🥈 Każdy otrzymuje 1 pkt!'}"
+                f"{'🥇 Każdy otrzymuje 6 pkt!' if wygrana else '🥈 Każdy otrzymuje 2 pkt!'}"
             ),
             color=kolor
         )
@@ -997,7 +997,7 @@ class LotteryView(View):
         uid = str(interaction.user.id)
         init_user(uid)
 
-        if user_data[uid]["punkty"] < 3:
+        if user_data[uid]["punkty"] < 10:
             await interaction.response.send_message(
                 "❌ Musisz mieć minimum 3 punkty aktywności, aby wziąć udział w loterii.",
                 ephemeral=True
@@ -1057,7 +1057,7 @@ async def loteria(interaction: discord.Interaction):
     msg = await kanal.send(
         "**🎰 LOTERIA TYGODNIOWA!**\n"
         "Kliknij przycisk poniżej, aby zapisać się do loterii!\n"
-        "🔒 Wymagane minimum 3 punkty aktywności.\n"
+        "🔒 Wymagane minimum 10 punktów aktywności.\n"
         "🎁 Nagroda: 50k – losowanie w każdą niedzielę o 17:00!\n\n"
         f"⏳ **Do losowania pozostało:** {int(godziny)}h {minuty}min\n\n"
         f"📋 **Aktualni uczestnicy:**\n{mentions}",
@@ -1095,8 +1095,8 @@ async def odswiez_loterie(guild):
             content=(
                 "**🎰 LOTERIA TYGODNIOWA!**\n"
                 "Kliknij przycisk poniżej, aby zapisać się do loterii!\n"
-                "🔒 Wymagane minimum 3 punkty aktywności.\n"
-                "🎁 Nagroda: 50k – losowanie w każdą niedzielę o 17:00!\n\n"
+                "🔒 Wymagane minimum 10 punktów aktywności.\n"
+                "🎁 Nagroda: 100k – losowanie w każdą niedzielę.\n\n"
                 f"⏳ **Do losowania pozostało:** {int(godziny)}h {minuty}min\n\n"
                 f"📋 **Aktualni uczestnicy:**\n{mentions}"
             ),
@@ -1122,7 +1122,7 @@ async def uruchom_loterie():
             zwyciezca = random.choice(list(uczestnicy))
             wynik = (
                 f"🎉 **WYNIKI LOTERII!**\n"
-                f"Nagrodę **50k** zgarnia: <@{zwyciezca}>!\n"
+                f"Nagrodę **100k** zgarnia: <@{zwyciezca}>!\n"
                 f"Gratulacje i do zobaczenia za tydzień! 🤑"
             )
 
@@ -1151,7 +1151,7 @@ async def przypomnienie_loteria():
             await kanal.send(
                 f"@everyone 🎰 **Loteria Tygodniowa** trwa!\n"
                 f"📋 Do rozstrzygnięcia pozostało: **{int(godziny)}h {minuty}min**\n"
-                f"Kliknij przycisk w kanale <#🎰┃loteria> i weź udział – jeśli masz minimum 3 punkty aktywności! 🍀💸"
+                f"Kliknij przycisk w kanale <#🎰┃loteria> i weź udział – jeśli masz minimum 10 punktów aktywności! 🍀💸"
             )
 
 import discord
