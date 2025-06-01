@@ -663,22 +663,23 @@ class SpisekKontraktView(View):
 
 from discord.ext import tasks
 
+from datetime import datetime, time
+import pytz
+
 @tasks.loop(minutes=1)
 async def przypomnienie_cenna():
-    await bot.wait_until_ready()
-    teraz = datetime.now()
-    if teraz.hour == 13 and teraz.minute == 0:
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw")).time()
+    if teraz.hour == 14 and teraz.minute == 0:
         for guild in bot.guilds:
             kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
             if kanal:
-                await kanal.send(
-                    "📢 **Godzina 14:00 – można dokonywać napadów na biznes!**\n"
-                    "Jeśli kontrakt `cenna` nie jest zamrożony, prosimy o jego wykonanie 💣💼"
-                )
+                await kanal.send("📦 **Kontrakt `/cenna` dostępny od 14:00!** Wymagana minimum 2-osobowa ekipa. 🕑")
+
+import pytz  # upewnij się, że masz zaimportowane
 
 @tasks.loop(minutes=1)
 async def ogloszenie_top_usera():
-    teraz = datetime.now()
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw"))
     if teraz.hour == 10 and teraz.minute == 0:
         for guild in bot.guilds:
             kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
