@@ -1009,14 +1009,14 @@ class LotteryView(View):
         if "lider" not in role_names and "zarząd" not in role_names:
             await interaction.response.send_message("❌ Tylko Lider lub Zarząd może resetować loterię.", ephemeral=True)
             return
-        await interaction.response.send_modal(ResetLoteriiModal(interaction, self))
+            await interaction.response.send_modal(ResetLoteriiModal(interaction, self))
 
     @discord.ui.button(label="🏁 Zakończ Loterię", style=discord.ButtonStyle.primary, custom_id="end_loteria")
-async def finish_loteria(self, interaction: discord.Interaction, button: Button):
-    role_names = [role.name.lower() for role in interaction.user.roles]
-    if "lider" not in role_names and "zarząd" not in role_names:
-        await interaction.response.send_message("❌ Tylko Lider lub Zarząd może zakończyć loterię.", ephemeral=True)
-        return
+    async def finish_loteria(self, interaction: discord.Interaction, button: Button):
+        role_names = [role.name.lower() for role in interaction.user.roles]
+        if "lider" not in role_names and "zarząd" not in role_names:
+            await interaction.response.send_message("❌ Tylko Lider lub Zarząd może zakończyć loterię.", ephemeral=True)
+            return
 
     uczestnicy = lottery_participants.get(self.guild_id, set())
     if not uczestnicy:
