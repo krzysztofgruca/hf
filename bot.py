@@ -1036,6 +1036,7 @@ class LotteryView(View):
 
     await interaction.response.send_message("✅ Loteria została zakończona i ogłoszono zwycięzcę.", ephemeral=True)
 
+
 @tree.command(name="loteria", description="Utwórz wiadomość loterii z przyciskiem do zapisu")
 async def loteria(interaction: discord.Interaction):
     kanal = discord.utils.get(interaction.guild.text_channels, name="🎰┃loteria")
