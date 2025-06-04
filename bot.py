@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, time  # dodaj też `time`
 import asyncio
 import random
 
-# 🌀 GODZINA CHAOSU
+# 🌀 GODZ CHAOSU
 godzina_chaosu = None  # zaplanowana godzina
 aktywny_chaos = False  # czy aktualnie trwa
 
