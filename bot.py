@@ -90,8 +90,8 @@ CONTRACTS = {
         "join_label": "Dołącz do spisku",
         "color": 0x9B59B6,
     },
-    "kable": {
-        "title": "Kable",
+    "paczki": {
+        "title": "Paczki",
         "emoji": "📦",
         "points": 3,
         "minimum": 5,
@@ -146,7 +146,7 @@ def init_database() -> None:
                 white INTEGER NOT NULL DEFAULT 0,
                 cenna INTEGER NOT NULL DEFAULT 0,
                 spisek INTEGER NOT NULL DEFAULT 0,
-                kable INTEGER NOT NULL DEFAULT 0,
+                paczki INTEGER NOT NULL DEFAULT 0,
                 capt INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (guild_id, user_id)
             );
@@ -237,7 +237,7 @@ def add_activity(
     activity: str,
     points: int,
 ) -> None:
-    allowed = {"green", "blue", "white", "cenna", "spisek", "kable", "capt"}
+    allowed = {"green", "blue", "white", "cenna", "spisek", "paczki", "capt"}
     if activity not in allowed:
         raise ValueError(f"Unknown activity: {activity}")
 
@@ -536,7 +536,7 @@ async def refresh_stats(guild: discord.Guild) -> None:
             "white": "🤍 white",
             "cenna": "🔫 cenna",
             "spisek": "🧠 spisek",
-            "kable": "📦 kable",
+            "paczki": "📦 paczki",
             "capt": "⚔️ capt",
         }
         sections = ["📈 **AUREN FAMILY — STATYSTYKI AKTYWNOŚCI**\n"]
@@ -1063,7 +1063,7 @@ class StatsView(discord.ui.View):
             "AUREN FAMILY — RAPORT AKTYWNOŚCI",
             f"Wygenerowano: {datetime.now(TIMEZONE).strftime('%d.%m.%Y %H:%M')}",
             "",
-            "Miejsce;User ID;Punkty;Green;Blue;White;Cenna;Spisek;Kable;CAPT",
+            "Miejsce;User ID;Punkty;Green;Blue;White;Cenna;Spisek;Paczki;CAPT",
         ]
         for index, row in enumerate(rows, start=1):
             lines.append(
@@ -1078,7 +1078,7 @@ class StatsView(discord.ui.View):
                         row["white"],
                         row["cenna"],
                         row["spisek"],
-                        row["kable"],
+                        row["paczki"],
                         row["capt"],
                     )
                 )
@@ -1370,7 +1370,7 @@ async def help_command(interaction: discord.Interaction) -> None:
         description=(
             "**Aktywność**\n"
             "`/kuriergreen` `/kurierblue` `/kurierwhite`\n"
-            "`/cenna` `/spisek` `/kable` `/capt`\n\n"
+            "`/cenna` `/spisek` `/paczki` `/capt`\n\n"
             "**Rodzina**\n"
             "`/statystyki` `/loteria` `/wystawmnie`\n"
             "`/godzinachaosu` `/biuroall` `/afk`\n\n"
@@ -1463,9 +1463,9 @@ async def spisek(interaction: discord.Interaction) -> None:
     await create_contract(interaction, "spisek")
 
 
-@bot.tree.command(name="kable", description="Rozpocznij grupowy kontrakt kable")
-async def kable(interaction: discord.Interaction) -> None:
-    await create_contract(interaction, "kable")
+@bot.tree.command(name="paczki", description="Rozpocznij grupowy kontrakt paczki")
+async def paczki(interaction: discord.Interaction) -> None:
+    await create_contract(interaction, "paczki")
 
 
 @bot.tree.command(name="capt", description="Rozpocznij akcję CAPT")
@@ -1661,7 +1661,7 @@ async def reset_loterii(
     typ=[
         app_commands.Choice(name="Cenna", value="cenna"),
         app_commands.Choice(name="Spisek", value="spisek"),
-        app_commands.Choice(name="Kable", value="kable"),
+        app_commands.Choice(name="paczki", value="paczki"),
         app_commands.Choice(name="CAPT", value="capt"),
     ]
 )
@@ -1897,12 +1897,12 @@ async def before_stats_refresh() -> None:
 @tasks.loop(minutes=20)
 async def contract_reminder_loop() -> None:
     for guild in bot.guilds:
-        contract = active_contract(guild.id, "kable")
+        contract = active_contract(guild.id, "paczki")
         if not contract:
             continue
 
-        participants = contract_participants(guild.id, "kable")
-        missing = max(0, int(CONTRACTS["kable"]["minimum"]) - len(participants))
+        participants = contract_participants(guild.id, "paczki")
+        missing = max(0, int(CONTRACTS["paczki"]["minimum"]) - len(participants))
         if missing <= 0:
             continue
 
@@ -1910,11 +1910,11 @@ async def contract_reminder_loop() -> None:
         if isinstance(channel, discord.TextChannel):
             try:
                 await channel.send(
-                    f"@everyone 📦 **Kable AUREN nadal aktywne!** "
+                    f"@everyone 📦 **paczki AUREN nadal aktywne!** "
                     f"Potrzeba jeszcze **{missing}** osób."
                 )
             except discord.HTTPException:
-                log.exception("Kable reminder failed")
+                log.exception("paczki reminder failed")
 
 
 @contract_reminder_loop.before_loop
