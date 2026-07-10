@@ -1278,25 +1278,64 @@ class ResetLoteriiModal(discord.ui.Modal, title="Reset Loterii"):
             await interaction.response.send_message("❌ Niepoprawny kod resetu.", ephemeral=True)
             return
 
-        guild_id = self.interaction.guild.id
+        guild = interaction.guild
+        guild_id = guild.id
         user = interaction.user
         czas = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+        # Najpierw potwierdzamy modal, żeby Discord nie zgłosił błędu interakcji.
+        await interaction.response.defer(ephemeral=True)
+
         lottery_participants[guild_id] = set()
-        if guild_id in lottery_messages:
-            del lottery_messages[guild_id]
+        lottery_messages.pop(guild_id, None)
         save_lottery_data()
 
-        kanal = discord.utils.get(self.interaction.guild.text_channels, name="🎰┃loteria")
-        if kanal:
+        kanal = discord.utils.get(guild.text_channels, name="🎰┃loteria")
+        if kanal is None:
+            kanal = await guild.create_text_channel("🎰┃loteria")
+        else:
             async for msg in kanal.history(limit=20):
-                if msg.author == self.interaction.client.user:
-                    await msg.delete()
+                if msg.author == interaction.client.user:
+                    try:
+                        await msg.delete()
+                    except discord.HTTPException:
+                        pass
 
-        await loteria(self.interaction)
-        await interaction.response.send_message("✅ Loteria została zresetowana!", ephemeral=True)
+        teraz = datetime.now()
+        dni_do_niedzieli = (6 - teraz.weekday()) % 7
+        next_lottery_time = (teraz + timedelta(days=dni_do_niedzieli)).replace(
+            hour=17, minute=0, second=0, microsecond=0
+        )
+        if next_lottery_time <= teraz:
+            next_lottery_time += timedelta(days=7)
 
-        print(f"[{czas}] 🔁 RESET LOTERII przez {user.name} ({user.id}) na serwerze {self.interaction.guild.name}")
+        czas_do = next_lottery_time - teraz
+        godziny, reszta = divmod(int(czas_do.total_seconds()), 3600)
+        minuty = reszta // 60
+
+        view = LotteryView(guild_id)
+        msg = await kanal.send(
+            "**🎰 LOTERIA TYGODNIOWA AUREN!**\n"
+            "Kliknij przycisk poniżej, aby zapisać się do loterii!\n"
+            "🔒 Wymagane minimum 20 punktów aktywności.\n"
+            "🎁 Nagroda: 100k – losowanie w każdą niedzielę o 17:00!\n\n"
+            f"⏳ **Do losowania pozostało:** {godziny}h {minuty}min\n\n"
+            "📋 **Aktualni uczestnicy:**\nBrak zgłoszeń",
+            view=view
+        )
+
+        lottery_messages[guild_id] = msg.id
+        save_lottery_data()
+
+        await interaction.followup.send(
+            "✅ Loteria została zresetowana i utworzona od nowa!",
+            ephemeral=True
+        )
+
+        print(
+            f"[{czas}] 🔁 RESET LOTERII przez {user.name} ({user.id}) "
+            f"na serwerze {guild.name}"
+        )
 
 
 import os
