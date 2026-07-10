@@ -1,890 +1,1276 @@
-from __future__ import annotations
+import discord
+from discord.ext import commands
+from discord import app_commands
+import json
+import pytz
+londyn = pytz.timezone("Europe/London")
+from datetime import datetime, timedelta, time  # dodaj też `time`
+import asyncio
+import random
+
+# 🌀 GODZ CHAOSU
+godzina_chaosu = None  # zaplanowana godzina
+aktywny_chaos = False  # czy aktualnie trwa
+
+cooldowns_kurier = {}  # {user_id: datetime}
+from discord.ui import View, Button
+
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
+
+# Wczytywanie danych
+try:
+    with open("dane.json", "r") as f:
+        user_data = json.load(f)
+except FileNotFoundError:
+    user_data = {}
+
+try:
+    with open("cooldowns.json", "r") as f:
+        cooldowns = json.load(f)
+except FileNotFoundError:
+    cooldowns = {}
+
+def init_user(uid):
+    default = {
+        "punkty": 0,
+        "cenna": 0,
+        "green": 0,
+        "blue": 0,
+        "white": 0,
+        "spisek": 0,
+        "kable": 0,
+        "capt": 0
+    }
+    if uid not in user_data:
+        user_data[uid] = default.copy()
+    elif isinstance(user_data[uid], dict):
+        for key in default:
+            if key not in user_data[uid]:
+                user_data[uid][key] = default[key]
+
+def can_use_command(uid, command):
+    now = datetime.utcnow()
+    user_cd = cooldowns.get(uid, {})
+    last_used_str = user_cd.get(command)
+    cooldown_hours = {"cenna": 24, "kable": 24, "spisek": 30}.get(command, 24)
+    if last_used_str:
+        last_used = datetime.strptime(last_used_str, "%Y-%m-%d %H:%M:%S")
+        if now - last_used < timedelta(hours=cooldown_hours):
+            remaining = timedelta(hours=cooldown_hours) - (now - last_used)
+            return False, remaining
+    return True, None
+
+def update_cooldown(uid, command):
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    if uid not in cooldowns:
+        cooldowns[uid] = {}
+    cooldowns[uid][command] = now
+    with open("cooldowns.json", "w") as f:
+        json.dump(cooldowns, f)
+
+def kontrakt_embed(user, typ, emoji, kolor):
+    teraz = datetime.now().strftime("%d.%m.%Y, %H:%M:%S")
+    return discord.Embed(
+        title=f"{emoji} Kontrakt Zakończony",
+        description=f"Kontrakt **{typ}** zakończony przez {user.mention}.\n📅 **Data:** {teraz}",
+        color=kolor
+    )
+
+lottery_participants = {}
+lottery_messages = {}
+
+def save_lottery_data():
+    with open("loteria.json", "w") as f:
+        json.dump({
+            "participants": {str(k): list(v) for k, v in lottery_participants.items()},
+            "messages": {str(k): v for k, v in lottery_messages.items()}
+        }, f)
+
+def load_lottery_data():
+    global lottery_participants, lottery_messages
+    try:
+        with open("loteria.json", "r") as f:
+            data = json.load(f)
+            lottery_participants = {int(k): set(v) for k, v in data.get("participants", {}).items()}
+            lottery_messages = {int(k): v for k, v in data.get("messages", {}).items()}
+    except FileNotFoundError:
+        pass
+
+async def zakoncz_kontrakt(interaction, typ, punkty, klucz, emoji, kolor, cooldown=False):
+    user = interaction.user
+    uid = str(user.id)
+    init_user(uid)
+
+    if cooldown:
+        allowed, wait_time = can_use_command(uid, klucz)
+        if not allowed:
+            h, rem = divmod(wait_time.total_seconds(), 3600)
+            m = int(rem // 60)
+            await interaction.response.send_message(f"⏳ Odczekaj **{int(h)}h {m}min**.", ephemeral=True)
+            return
+        update_cooldown(uid, klucz)
+
+    user_data[uid]["punkty"] += punkty
+    user_data[uid][klucz] += 1
+    with open("dane.json", "w") as f:
+        json.dump(user_data, f)
+
+    embed = kontrakt_embed(user, typ, emoji, kolor)
+    await interaction.response.send_message(embed=embed)
+    await odswiez_statystyki(interaction.guild)
+
+from discord.ext import commands
+
+from datetime import datetime, timedelta
+
+@tree.command(name="kuriergreen", description="Zakończ kontrakt green (+1 pkt)")
+async def green(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    teraz = datetime.utcnow()
+
+    ostatni = cooldowns_kurier.get(uid)
+    if ostatni and teraz - ostatni < timedelta(minutes=15):
+        pozostalo = timedelta(minutes=15) - (teraz - ostatni)
+        minuty, sekundy = divmod(pozostalo.total_seconds(), 60)
+        await interaction.response.send_message(
+            f"⏳ Możesz ponownie użyć tej komendy za **{int(minuty)}m {int(sekundy)}s**.",
+            ephemeral=True
+        )
+        return
+
+    cooldowns_kurier[uid] = teraz
+    punkty = 3 if aktywny_chaos else 1
+    await zakoncz_kontrakt(interaction, "kurier_green", punkty, "green", "🌿", 0x00ff00)
+
+
+@tree.command(name="kurierblue", description="Zakończ kontrakt blue (+1 pkt)")
+async def blue(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    teraz = datetime.utcnow()
+
+    ostatni = cooldowns_kurier.get(f"blue_{uid}")
+    if ostatni and teraz - ostatni < timedelta(minutes=15):
+        pozostalo = timedelta(minutes=15) - (teraz - ostatni)
+        minuty, sekundy = divmod(pozostalo.total_seconds(), 60)
+        await interaction.response.send_message(
+            f"⏳ Możesz ponownie użyć tej komendy za **{int(minuty)}m {int(sekundy)}s**.",
+            ephemeral=True
+        )
+        return
+
+    cooldowns_kurier[f"blue_{uid}"] = teraz
+    punkty = 3 if aktywny_chaos else 1
+    await zakoncz_kontrakt(interaction, "kurier_blue", punkty, "blue", "💙", 0x3498db)
+
+
+@tree.command(name="kurierwhite", description="Zakończ kontrakt white (+1 pkt)")
+@commands.cooldown(1, 900, commands.BucketType.user)
+async def white(interaction: discord.Interaction):
+    punkty = 3 if aktywny_chaos else 1
+    await zakoncz_kontrakt(interaction, "kurier_white", punkty, "white", "🤍", 0xffffff)
+
+@tree.command(name="cenna", description="Rozpocznij kontrakt cenna (grupowy, min. 2 osoby)")
+async def cenna(interaction: discord.Interaction):
+    view = CennaKontraktView(interaction, interaction.guild.id)
+    msg = await interaction.channel.send(
+        content=f"🔫 **Kontrakt CENNA rozpoczęty przez {interaction.user.mention}!**\n"
+                f"Kliknij przycisk, aby dołączyć do kontraktu. Potrzeba minimum 2 osób.",
+        view=view
+    )
+    view.kontrakt_msg = msg 
+    active_cenna_contracts[interaction.guild.id]["msg_id"] = msg.id
+    await interaction.response.send_message("📌 Kontrakt cenna został utworzony!", ephemeral=True)
+
+@tree.command(name="spisek", description="Rozpocznij grupowy spisek (tylko dla leaderów i zarządu)")
+async def spisek(interaction: discord.Interaction):
+    # Sprawdź role
+    role_names = [role.name.lower() for role in interaction.user.roles]
+    if "leader" not in role_names and "zarząd" not in role_names:
+        await interaction.response.send_message("❌ Tylko użytkownicy z rolą `leader` lub `zarząd` mogą rozpocząć spisek.", ephemeral=True)
+        return
+
+    # Rozpocznij spisek
+    view = SpisekKontraktView(interaction, interaction.guild.id)
+    msg = await interaction.channel.send(
+        f"🧠 **Rozpoczęto kontrakt spisek!**\nInicjator: {interaction.user.mention}\nZalecane min. 2 osoby.",
+        view=view
+    )
+    view.kontrakt_msg = msg
+    active_spisek_contracts[interaction.guild.id]["msg_id"] = msg.id
+    await interaction.response.send_message("Spisek został aktywowany!", ephemeral=True)
+
+@tree.command(name="kable", description="Rozpocznij kontrakt grupowy kable")
+async def start_kable(interaction: discord.Interaction):
+    view = KableKontraktView(interaction, interaction.guild.id)
+    info = (
+        f"👥 Zapisani (1/5): {interaction.user.mention}\n"
+        f"🕐 Potrzeba jeszcze **4** osób do rozpoczęcia kontraktu."
+    )
+    message = await interaction.channel.send(f"📦 **Kontrakt grupowy: kable**\n{info}", view=view)
+    kontrakt = active_kable_contracts[interaction.guild.id]
+    kontrakt["msg_id"] = message.id
+    kontrakt["message"] = message
+    await interaction.response.send_message("🚀 Kontrakt grupowy **kable** został rozpoczęty!", ephemeral=True)
+
+# --- Statystyki i UI ---
+def generuj_raport(user_data):
+    emoji_map = {
+        "green": "🌿 green",
+        "blue": "💙 blue",
+        "white": "🤍 white",
+        "cenna": "🔫 cenna",
+        "spisek": "🧠 spisek",
+        "kable": "📦 kable",
+        "capt": "⚔️ capt",
+    }
+
+    ranking = sorted(user_data.items(), key=lambda x: x[1]["punkty"], reverse=True)
+    lines = []
+    for i, (uid, data) in enumerate(ranking):
+        if data["punkty"] <= 0:
+            continue
+
+        # Dobór emoji w zależności od miejsca
+        if i == 0:
+            prefix = "🥇"
+        elif i == 1:
+            prefix = "🥈"
+        elif i == 2:
+            prefix = "🥉"
+        else:
+            prefix = "👤"
+
+        aktywne = [f"{emoji_map[k]}: {v}" for k, v in data.items() if k in emoji_map and v > 0]
+        aktywnosci_text = " | ".join(aktywne)
+
+        linia = (
+            "━\n"
+            f"{prefix} **<@{uid}>**\n"
+            f"{aktywnosci_text}\n"
+            f"🔢 **Suma punktów:** {data['punkty']}"
+        )
+        lines.append(linia)
+
+    return f"📈 **STATYSTYKI AKTYWNOŚCI**\n\n" + "\n".join(lines)
+
+class ResetModal(discord.ui.Modal, title="Reset Statystyk"):
+    kod = discord.ui.TextInput(label="Wpisz kod resetu", placeholder="kod", required=True)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.kod.value == "heaven2025":
+            user_data.clear()
+            with open("dane.json", "w") as f:
+                json.dump(user_data, f)
+
+            kanal = discord.utils.get(interaction.guild.text_channels, name="✅┃statystyki")
+            if kanal:
+                async for msg in kanal.history(limit=10):
+                    await msg.delete()
+                raport_txt = generuj_raport(user_data)
+                await kanal.send(raport_txt, view=StatystykiView(raport_txt))
+
+            await interaction.response.send_message("✅ Statystyki zostały zresetowane!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Nieprawidłowy kod.", ephemeral=True)
+
+class StatystykiView(discord.ui.View):
+    def __init__(self, raport):
+        super().__init__(timeout=None)
+        self.raport = raport
+
+    @discord.ui.button(label="📁 Pobierz raport", style=discord.ButtonStyle.primary)
+    async def download_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        with open("statystyki_aktywnosci.txt", "w", encoding="utf-8") as f:
+            f.write(self.raport)
+        await interaction.response.send_message("📎 Pobierz plik:", file=discord.File("statystyki_aktywnosci.txt"), ephemeral=True)
+
+    @discord.ui.button(label="🔄 Resetuj statystyki", style=discord.ButtonStyle.danger)
+    async def reset_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ResetModal())
+
+@tree.command(name="statystyki", description="Utwórz lub zaktualizuj statystyki aktywności")
+async def statystyki(interaction: discord.Interaction):
+    raport_txt = generuj_raport(user_data)
+
+    kanal = discord.utils.get(interaction.guild.text_channels, name="✅┃statystyki")
+    if kanal is None:
+        kanal = await interaction.guild.create_text_channel("✅┃statystyki")
+
+    async for msg in kanal.history(limit=10):
+        await msg.delete()
+
+    if len(raport_txt) > 6000:
+        raport_txt += "\n\n[⚠️ Uwaga: końcówka raportu mogła zostać obcięta z powodu limitu Discorda]"
+
+    for i in range(0, len(raport_txt), 1880):
+        await kanal.send(raport_txt[i:i+1880])
+
+
+    # Potem osobno przyciski
+    await kanal.send(view=StatystykiView(raport_txt))
+
+    await interaction.response.send_message("📊 Statystyki zostały opublikowane!", ephemeral=True)
+
+async def odswiez_statystyki(guild):
+    kanal = discord.utils.get(guild.text_channels, name="✅┃statystyki")
+    if kanal:
+        async for msg in kanal.history(limit=10):
+            await msg.delete()
+
+        raport_txt = generuj_raport(user_data)
+
+        # Wysyłanie raportu partiami
+        if len(raport_txt) > 6000:
+            raport_txt += "\n\n[⚠️ Uwaga: końcówka raportu mogła zostać obcięta z powodu limitu Discorda]"
+
+        for i in range(0, len(raport_txt), 1880):
+            await kanal.send(raport_txt[i:i+1880])
+
+        # Potem same przyciski
+        await kanal.send(view=StatystykiView(raport_txt))
 
 import asyncio
-import logging
-import os
-import random
-import sqlite3
-from contextlib import contextmanager
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Iterable
-from zoneinfo import ZoneInfo
-
+from discord.ui import View, Button
 import discord
-from discord import app_commands
-from discord.ext import commands, tasks
+import json
 
-# ============================= CONFIG =============================
-TOKEN = os.getenv("DISCORD_TOKEN", "").strip()
-GUILD_ID = int(os.getenv("GUILD_ID", "0") or 0)
-TZ = ZoneInfo(os.getenv("TZ", "Europe/Warsaw"))
-DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
-try:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-except PermissionError:
-    DATA_DIR = Path(".")
-DB_PATH = DATA_DIR / "auren_bot.db"
+active_kable_contracts = {}  # {guild_id: {"inicjator": user, "uczestnicy": set, "msg_id": id, "message": msg_obj}}
 
-CHAT_CHANNEL = os.getenv("CHAT_CHANNEL", "💬┃chat-rodzinny")
-CONTRACT_CHANNEL = os.getenv("CONTRACT_CHANNEL", "🎯┃kontrakty-aktywność")
-STATS_CHANNEL = os.getenv("STATS_CHANNEL", "✅┃statystyki")
-LOTTERY_CHANNEL = os.getenv("LOTTERY_CHANNEL", "🎰┃loteria")
-GATHERING_CHANNEL = os.getenv("GATHERING_CHANNEL", "🗣┃zbiórka")
-LEADER_ROLES = {x.strip().casefold() for x in os.getenv("LEADER_ROLES", "Leader,Lider,Zarząd").split(",") if x.strip()}
+async def przypomnienie_kable(guild):
+    kontrakt = active_kable_contracts.get(guild.id)
+    if not kontrakt:
+        return
 
-COURIER_COOLDOWN_MINUTES = 15
-LOTTERY_MIN_POINTS = 20
-LOTTERY_PRIZE = "100 000$"
+    kanal = discord.utils.get(guild.text_channels, name="🎯┃kontrakty-aktywność")
+    if not kanal:
+        return
 
-CONTRACTS = {
-    "cenna": {"title": "Cenna partia", "emoji": "🔫", "points": 5, "minimum": 2, "color": 0xE74C3C},
-    "spisek": {"title": "Spisek", "emoji": "🧠", "points": 3, "minimum": 2, "color": 0x9B59B6},
-    "kable": {"title": "Kable", "emoji": "📦", "points": 3, "minimum": 5, "color": 0xF39C12},
-    "capt": {"title": "CAPT", "emoji": "⚔️", "points_win": 6, "points_loss": 2, "minimum": 1, "color": 0xC0392B},
-}
+    for i in range(3):
+        if guild.id not in active_kable_contracts:
+            break
+        pozostali = 5 - len(kontrakt["uczestnicy"])
+        if pozostali <= 0:
+            break
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
-log = logging.getLogger("auren-bot")
-
-# ============================= DATABASE =============================
-@contextmanager
-def db() -> Iterable[sqlite3.Connection]:
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA foreign_keys=ON")
-    try:
-        yield con
-        con.commit()
-    finally:
-        con.close()
-
-
-def init_database() -> None:
-    with db() as con:
-        con.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            guild_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            points INTEGER NOT NULL DEFAULT 0,
-            green INTEGER NOT NULL DEFAULT 0,
-            blue INTEGER NOT NULL DEFAULT 0,
-            white INTEGER NOT NULL DEFAULT 0,
-            cenna INTEGER NOT NULL DEFAULT 0,
-            spisek INTEGER NOT NULL DEFAULT 0,
-            kable INTEGER NOT NULL DEFAULT 0,
-            capt INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (guild_id, user_id)
-        );
-        CREATE TABLE IF NOT EXISTS cooldowns (
-            guild_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            command TEXT NOT NULL,
-            used_at TEXT NOT NULL,
-            PRIMARY KEY (guild_id, user_id, command)
-        );
-        CREATE TABLE IF NOT EXISTS active_contracts (
-            guild_id INTEGER NOT NULL,
-            contract_type TEXT NOT NULL,
-            initiator_id INTEGER NOT NULL,
-            channel_id INTEGER NOT NULL,
-            message_id INTEGER,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY (guild_id, contract_type)
-        );
-        CREATE TABLE IF NOT EXISTS contract_participants (
-            guild_id INTEGER NOT NULL,
-            contract_type TEXT NOT NULL,
-            user_id INTEGER NOT NULL,
-            joined_at TEXT NOT NULL,
-            PRIMARY KEY (guild_id, contract_type, user_id),
-            FOREIGN KEY (guild_id, contract_type)
-                REFERENCES active_contracts(guild_id, contract_type)
-                ON DELETE CASCADE
-        );
-        CREATE TABLE IF NOT EXISTS lottery_participants (
-            guild_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            joined_at TEXT NOT NULL,
-            PRIMARY KEY (guild_id, user_id)
-        );
-        CREATE TABLE IF NOT EXISTS settings (
-            guild_id INTEGER NOT NULL,
-            key TEXT NOT NULL,
-            value TEXT NOT NULL,
-            PRIMARY KEY (guild_id, key)
-        );
-        CREATE TABLE IF NOT EXISTS afk (
-            guild_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            reason TEXT NOT NULL,
-            since TEXT NOT NULL,
-            PRIMARY KEY (guild_id, user_id)
-        );
-        CREATE TABLE IF NOT EXISTS capt_signup (
-            guild_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            joined_at TEXT NOT NULL,
-            PRIMARY KEY (guild_id, user_id)
-        );
-        """)
-
-
-def ensure_user(guild_id: int, user_id: int) -> None:
-    with db() as con:
-        con.execute("INSERT OR IGNORE INTO users(guild_id, user_id) VALUES (?, ?)", (guild_id, user_id))
-
-
-def get_user(guild_id: int, user_id: int) -> sqlite3.Row:
-    ensure_user(guild_id, user_id)
-    with db() as con:
-        row = con.execute("SELECT * FROM users WHERE guild_id=? AND user_id=?", (guild_id, user_id)).fetchone()
-    assert row is not None
-    return row
-
-
-def add_activity(guild_id: int, user_id: int, activity: str, points: int) -> None:
-    if activity not in {"green", "blue", "white", "cenna", "spisek", "kable", "capt", "auto"}:
-        raise ValueError(activity)
-    ensure_user(guild_id, user_id)
-    with db() as con:
-        con.execute(
-            f"UPDATE users SET points=points+?, {activity}={activity}+1 WHERE guild_id=? AND user_id=?",
-            (points, guild_id, user_id),
+        await kanal.send(
+            f"@everyone 📦 Kontrakt **Kable** aktywny!\n"
+            f"Potrzeba jeszcze **{pozostali}** osób do zamknięcia kontraktu.\n"
+            f"Kliknij powyżej przycisk **Zapisz się na kable**, jeśli już fizycznie dostarczyłeś kabel. 📥"
         )
+        await asyncio.sleep(20 * 60)
 
-
-def get_ranking(guild_id: int) -> list[sqlite3.Row]:
-    with db() as con:
-        return con.execute(
-            "SELECT * FROM users WHERE guild_id=? AND points>0 ORDER BY points DESC, user_id ASC",
-            (guild_id,),
-        ).fetchall()
-
-
-def cooldown_remaining(guild_id: int, user_id: int, command: str, minutes: int) -> timedelta | None:
-    with db() as con:
-        row = con.execute(
-            "SELECT used_at FROM cooldowns WHERE guild_id=? AND user_id=? AND command=?",
-            (guild_id, user_id, command),
-        ).fetchone()
-    if not row:
-        return None
-    remaining = timedelta(minutes=minutes) - (datetime.now(TZ) - datetime.fromisoformat(row["used_at"]))
-    return remaining if remaining.total_seconds() > 0 else None
-
-
-def set_cooldown(guild_id: int, user_id: int, command: str) -> None:
-    with db() as con:
-        con.execute("""
-            INSERT INTO cooldowns(guild_id,user_id,command,used_at) VALUES(?,?,?,?)
-            ON CONFLICT(guild_id,user_id,command) DO UPDATE SET used_at=excluded.used_at
-        """, (guild_id, user_id, command, datetime.now(TZ).isoformat()))
-
-
-def get_setting(guild_id: int, key: str) -> str | None:
-    with db() as con:
-        row = con.execute("SELECT value FROM settings WHERE guild_id=? AND key=?", (guild_id, key)).fetchone()
-    return row["value"] if row else None
-
-
-def set_setting(guild_id: int, key: str, value: str) -> None:
-    with db() as con:
-        con.execute("""
-            INSERT INTO settings(guild_id,key,value) VALUES(?,?,?)
-            ON CONFLICT(guild_id,key) DO UPDATE SET value=excluded.value
-        """, (guild_id, key, value))
-
-# ============================= HELPERS =============================
-def is_manager(member: discord.Member) -> bool:
-    return member.guild_permissions.administrator or any(r.name.casefold() in LEADER_ROLES for r in member.roles)
-
-
-async def reply(interaction: discord.Interaction, content: str | None = None, *, embed: discord.Embed | None = None, ephemeral: bool = True, view: discord.ui.View | None = None) -> None:
-    if interaction.response.is_done():
-        await interaction.followup.send(content=content, embed=embed, ephemeral=ephemeral, view=view)
-    else:
-        await interaction.response.send_message(content=content, embed=embed, ephemeral=ephemeral, view=view)
-
-
-def find_channel(guild: discord.Guild, name: str) -> discord.TextChannel | None:
-    return discord.utils.get(guild.text_channels, name=name)
-
-
-async def get_or_create_channel(guild: discord.Guild, name: str) -> discord.TextChannel:
-    return find_channel(guild, name) or await guild.create_text_channel(name)
-
-
-def format_remaining(delta: timedelta) -> str:
-    seconds = max(0, int(delta.total_seconds()))
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes}min" if hours else f"{minutes}min {seconds}s"
-
-
-def split_text(text: str, limit: int = 1900) -> list[str]:
-    chunks, current = [], ""
-    for line in text.splitlines(True):
-        if len(current) + len(line) <= limit:
-            current += line
-        else:
-            if current:
-                chunks.append(current.rstrip())
-            current = line
-    if current:
-        chunks.append(current.rstrip())
-    return chunks or ["Brak danych."]
-
-
-def active_contract(guild_id: int, contract_type: str) -> sqlite3.Row | None:
-    with db() as con:
-        return con.execute(
-            "SELECT * FROM active_contracts WHERE guild_id=? AND contract_type=?",
-            (guild_id, contract_type),
-        ).fetchone()
-
-
-def participants(guild_id: int, contract_type: str) -> list[int]:
-    with db() as con:
-        rows = con.execute(
-            "SELECT user_id FROM contract_participants WHERE guild_id=? AND contract_type=? ORDER BY joined_at",
-            (guild_id, contract_type),
-        ).fetchall()
-    return [int(x["user_id"]) for x in rows]
-
-
-def contract_embed(guild_id: int, contract_type: str) -> discord.Embed:
-    cfg = CONTRACTS[contract_type]
-    contract = active_contract(guild_id, contract_type)
-    users = participants(guild_id, contract_type)
-    mentions = ", ".join(f"<@{uid}>" for uid in users) or "Brak"
-    if contract_type == "capt":
-        desc = (
-            f"👤 **Inicjator:** <@{contract['initiator_id']}>\n"
-            f"👥 **Uczestnicy ({len(users)}):** {mentions}\n\n"
-            f"🏆 Wygrana: **{cfg['points_win']} pkt**\n"
-            f"❌ Przegrana: **{cfg['points_loss']} pkt**"
-        )
-    else:
-        minimum = int(cfg["minimum"])
-        missing = max(0, minimum - len(users))
-        desc = (
-            f"👤 **Inicjator:** <@{contract['initiator_id']}>\n"
-            f"👥 **Uczestnicy ({len(users)}/{minimum}):** {mentions}\n"
-            f"⭐ Punkty: **{cfg['points']} pkt**\n\n"
-            + ("✅ Minimalna liczba osiągnięta." if missing == 0 else f"🕐 Potrzeba jeszcze **{missing}** osób.")
-        )
-    return discord.Embed(title=f"{cfg['emoji']} AUREN — {cfg['title']}", description=desc, color=int(cfg["color"]), timestamp=datetime.now(TZ))
-
-
-async def update_contract_message(client: discord.Client, guild_id: int, contract_type: str) -> None:
-    contract = active_contract(guild_id, contract_type)
-    if not contract or not contract["message_id"]:
-        return
-    channel = client.get_channel(int(contract["channel_id"]))
-    if not isinstance(channel, discord.TextChannel):
-        return
-    try:
-        msg = await channel.fetch_message(int(contract["message_id"]))
-        await msg.edit(embed=contract_embed(guild_id, contract_type), view=ContractView(contract_type))
-    except discord.HTTPException:
-        log.exception("Nie udało się odświeżyć kontraktu")
-
-
-async def refresh_stats(guild: discord.Guild) -> None:
-    channel = await get_or_create_channel(guild, STATS_CHANNEL)
-    rows = get_ranking(guild.id)
-    labels = {"green":"🌿 green","blue":"💙 blue","white":"🤍 white","cenna":"🔫 cenna","spisek":"🧠 spisek","kable":"📦 kable","capt":"⚔️ capt"}
-    blocks = ["📈 **AUREN FAMILY — STATYSTYKI AKTYWNOŚCI**\n"]
-    for i, row in enumerate(rows, 1):
-        medal = {1:"🥇",2:"🥈",3:"🥉"}.get(i,"👤")
-        acts = " | ".join(f"{label}: {row[key]}" for key,label in labels.items() if row[key] > 0)
-        blocks.append(f"━━━━━━━━━━━━━━━━━━\n{medal} **<@{row['user_id']}>**\n{acts}\n🔢 **Suma punktów: {row['points']}**")
-    if not rows:
-        blocks.append("Brak zapisanej aktywności.")
-    try:
-        async for msg in channel.history(limit=100):
-            if msg.author == guild.me:
-                await msg.delete()
-    except discord.HTTPException:
-        pass
-    for chunk in split_text("\n".join(blocks)):
-        await channel.send(chunk)
-    await channel.send("Administracja może pobrać raport lub odświeżyć dane.", view=StatsView())
-
-
-def next_lottery() -> datetime:
-    now = datetime.now(TZ)
-    days = (6 - now.weekday()) % 7
-    result = (now + timedelta(days=days)).replace(hour=17, minute=0, second=0, microsecond=0)
-    return result + timedelta(days=7) if result <= now else result
-
-
-async def refresh_lottery(guild: discord.Guild) -> None:
-    channel = await get_or_create_channel(guild, LOTTERY_CHANNEL)
-    with db() as con:
-        rows = con.execute("SELECT user_id FROM lottery_participants WHERE guild_id=? ORDER BY joined_at", (guild.id,)).fetchall()
-    users = [int(x["user_id"]) for x in rows]
-    listing = "\n".join(f"`{i}.` <@{uid}>" for i,uid in enumerate(users,1)) or "*Brak zapisanych osób.*"
-    delta = next_lottery() - datetime.now(TZ)
-    total = max(0, int(delta.total_seconds()//60))
-    days, rest = divmod(total, 1440)
-    hours, minutes = divmod(rest, 60)
-    embed = discord.Embed(
-        title="🎰 AUREN — LOTERIA TYGODNIOWA",
-        description=(
-            f"🔒 Wymagane: **{LOTTERY_MIN_POINTS} pkt**\n"
-            f"🎁 Nagroda: **{LOTTERY_PRIZE}**\n"
-            f"🕔 Losowanie: **niedziela 17:00**\n"
-            f"⏳ Pozostało: **{days} dni {hours}h {minutes}min**\n\n"
-            f"📋 **Uczestnicy ({len(users)}):**\n{listing}"
-        ),
-        color=0xF1C40F,
-    )
-    message_id = get_setting(guild.id, "lottery_message_id")
-    if message_id:
-        try:
-            msg = await channel.fetch_message(int(message_id))
-            await msg.edit(embed=embed, view=LotteryView())
-            return
-        except (discord.HTTPException, ValueError):
-            pass
-    msg = await channel.send(embed=embed, view=LotteryView())
-    set_setting(guild.id, "lottery_message_id", str(msg.id))
-
-
-async def create_contract(interaction: discord.Interaction, contract_type: str) -> None:
-    if not interaction.guild or not isinstance(interaction.user, discord.Member):
-        await reply(interaction, "❌ Komenda działa tylko na serwerze.")
-        return
-    if active_contract(interaction.guild.id, contract_type):
-        await reply(interaction, f"⚠️ **{CONTRACTS[contract_type]['title']}** już jest aktywne.")
-        return
-    if contract_type in {"spisek","capt"} and not is_manager(interaction.user):
-        await reply(interaction, "❌ Tę aktywność uruchamia tylko Leader, Lider, Zarząd lub administrator.")
-        return
-    await interaction.response.defer(ephemeral=True)
-    channel = interaction.channel if isinstance(interaction.channel, discord.TextChannel) else await get_or_create_channel(interaction.guild, CONTRACT_CHANNEL)
-    now = datetime.now(TZ).isoformat()
-    with db() as con:
-        con.execute("INSERT INTO active_contracts(guild_id,contract_type,initiator_id,channel_id,created_at) VALUES(?,?,?,?,?)", (interaction.guild.id,contract_type,interaction.user.id,channel.id,now))
-        con.execute("INSERT INTO contract_participants(guild_id,contract_type,user_id,joined_at) VALUES(?,?,?,?)", (interaction.guild.id,contract_type,interaction.user.id,now))
-    msg = await channel.send(embed=contract_embed(interaction.guild.id, contract_type), view=ContractView(contract_type))
-    with db() as con:
-        con.execute("UPDATE active_contracts SET message_id=? WHERE guild_id=? AND contract_type=?", (msg.id,interaction.guild.id,contract_type))
-    await interaction.followup.send(f"✅ Uruchomiono **{CONTRACTS[contract_type]['title']}**.", ephemeral=True)
-
-# ============================= VIEWS =============================
-class ContractView(discord.ui.View):
-    def __init__(self, contract_type: str):
+class KableKontraktView(View):
+    def __init__(self, interaction, guild_id):
         super().__init__(timeout=None)
-        self.contract_type = contract_type
-        join = discord.ui.Button(label="Dołącz", emoji="📥", style=discord.ButtonStyle.primary, custom_id=f"auren:{contract_type}:join")
-        leave = discord.ui.Button(label="Opuść", emoji="📤", style=discord.ButtonStyle.secondary, custom_id=f"auren:{contract_type}:leave")
-        join.callback = self.join_callback
-        leave.callback = self.leave_callback
-        self.add_item(join); self.add_item(leave)
-        if contract_type == "capt":
-            win = discord.ui.Button(label="CAPT wygrany", emoji="🏆", style=discord.ButtonStyle.success, custom_id="auren:capt:win")
-            loss = discord.ui.Button(label="CAPT przegrany", emoji="❌", style=discord.ButtonStyle.danger, custom_id="auren:capt:loss")
-            win.callback = self.win_callback; loss.callback = self.loss_callback
-            self.add_item(win); self.add_item(loss)
-        else:
-            finish = discord.ui.Button(label="Zakończ", emoji="✅", style=discord.ButtonStyle.success, custom_id=f"auren:{contract_type}:finish")
-            cancel = discord.ui.Button(label="Anuluj", emoji="🗑️", style=discord.ButtonStyle.danger, custom_id=f"auren:{contract_type}:cancel")
-            finish.callback = self.finish_callback; cancel.callback = self.cancel_callback
-            self.add_item(finish); self.add_item(cancel)
+        self.guild_id = guild_id
+        self.inicjator = interaction.user
+        kontrakt = {
+            "inicjator": self.inicjator,
+            "uczestnicy": set([self.inicjator.id]),
+            "msg_id": None,
+            "message": None
+        }
+        active_kable_contracts[guild_id] = kontrakt
+        asyncio.create_task(przypomnienie_kable(interaction.guild))
 
-    async def join_callback(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild or not active_contract(interaction.guild.id, self.contract_type):
-            await reply(interaction, "❌ Ta aktywność nie jest już aktywna."); return
-        try:
-            with db() as con:
-                con.execute("INSERT INTO contract_participants(guild_id,contract_type,user_id,joined_at) VALUES(?,?,?,?)", (interaction.guild.id,self.contract_type,interaction.user.id,datetime.now(TZ).isoformat()))
-        except sqlite3.IntegrityError:
-            await reply(interaction, "⚠️ Jesteś już zapisany."); return
-        await reply(interaction, "✅ Dołączono do aktywności.")
-        await update_contract_message(interaction.client, interaction.guild.id, self.contract_type)
+    async def update_message(self, channel):
+        kontrakt = active_kable_contracts[self.guild_id]
+        uczestnicy = kontrakt["uczestnicy"]
+        message = kontrakt.get("message")
 
-    async def leave_callback(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild:
+        mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy)
+        info = (
+            f"👥 Zapisani ({len(uczestnicy)}/5): {mentions}\n"
+            f"🕐 Potrzeba jeszcze **{max(0, 5 - len(uczestnicy))}** osób do rozpoczęcia kontraktu."
+        )
+
+        if message:
+            try:
+                await message.edit(content=f"📦 **Kontrakt grupowy: kable**\n{info}", view=self)
+            except:
+                pass
+
+    @discord.ui.button(label="📥 Zapisz się na kable", style=discord.ButtonStyle.primary)
+    async def join_button(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_kable_contracts[self.guild_id]
+
+        if interaction.user.id in kontrakt["uczestnicy"]:
+            await interaction.response.send_message("❗ Już jesteś zapisany do kontraktu kable.", ephemeral=True)
             return
-        contract = active_contract(interaction.guild.id, self.contract_type)
-        if not contract:
-            await reply(interaction, "❌ Ta aktywność nie jest już aktywna."); return
-        if interaction.user.id == int(contract["initiator_id"]):
-            await reply(interaction, "❌ Inicjator nie może opuścić aktywności. Może ją anulować."); return
-        with db() as con:
-            result = con.execute("DELETE FROM contract_participants WHERE guild_id=? AND contract_type=? AND user_id=?", (interaction.guild.id,self.contract_type,interaction.user.id))
-        if result.rowcount == 0:
-            await reply(interaction, "⚠️ Nie jesteś zapisany."); return
-        await reply(interaction, "✅ Wypisano z aktywności.")
-        await update_contract_message(interaction.client, interaction.guild.id, self.contract_type)
 
-    async def finish_callback(self, interaction: discord.Interaction) -> None:
-        await self.finish(interaction, None)
-
-    async def win_callback(self, interaction: discord.Interaction) -> None:
-        await self.finish(interaction, "win")
-
-    async def loss_callback(self, interaction: discord.Interaction) -> None:
-        await self.finish(interaction, "loss")
-
-    async def finish(self, interaction: discord.Interaction, result: str | None) -> None:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+        if len(kontrakt["uczestnicy"]) >= 5:
+            await interaction.response.send_message("❌ Limit 5 uczestników został osiągnięty.", ephemeral=True)
             return
-        contract = active_contract(interaction.guild.id, self.contract_type)
-        if not contract:
-            await reply(interaction, "❌ Ta aktywność nie jest już aktywna."); return
-        if interaction.user.id != int(contract["initiator_id"]) and not is_manager(interaction.user):
-            await reply(interaction, "❌ Zakończyć może tylko inicjator lub administracja."); return
-        users = participants(interaction.guild.id, self.contract_type)
-        minimum = int(CONTRACTS[self.contract_type]["minimum"])
-        if len(users) < minimum:
-            await reply(interaction, f"⚠️ Potrzeba minimum **{minimum}** osób. Obecnie: **{len(users)}**."); return
-        if self.contract_type == "capt":
-            points = int(CONTRACTS["capt"]["points_win"] if result == "win" else CONTRACTS["capt"]["points_loss"])
-            outcome = "WYGRANY" if result == "win" else "PRZEGRANY"
+
+        kontrakt["uczestnicy"].add(interaction.user.id)
+        await interaction.response.send_message("✅ Dołączyłeś do kontraktu kable.", ephemeral=True)
+        await self.update_message(interaction.channel)
+
+    @discord.ui.button(label="📤 Opuść kable", style=discord.ButtonStyle.secondary)
+    async def leave_button(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_kable_contracts[self.guild_id]
+        if interaction.user.id in kontrakt["uczestnicy"]:
+            kontrakt["uczestnicy"].remove(interaction.user.id)
+            await interaction.response.send_message("🚪 Opuściłeś kontrakt kable.", ephemeral=True)
         else:
-            points = int(CONTRACTS[self.contract_type]["points"]); outcome = "ZAKOŃCZONY"
-        for uid in users:
-            add_activity(interaction.guild.id, uid, self.contract_type, points)
-        with db() as con:
-            con.execute("DELETE FROM active_contracts WHERE guild_id=? AND contract_type=?", (interaction.guild.id,self.contract_type))
-        cfg = CONTRACTS[self.contract_type]
+            await interaction.response.send_message("❌ Nie jesteś zapisany do tego kontraktu.", ephemeral=True)
+        await self.update_message(interaction.channel)
+
+    @discord.ui.button(label="✅ Zakończ kontrakt", style=discord.ButtonStyle.success)
+    async def finish_button(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_kable_contracts.get(self.guild_id)
+        if not kontrakt:
+            await interaction.response.send_message("❌ Nie znaleziono aktywnego kontraktu.", ephemeral=True)
+            return
+
+        role_names = [role.name.lower() for role in interaction.user.roles]
+        if interaction.user.id != kontrakt["inicjator"].id and "lider" not in role_names:
+            await interaction.response.send_message("❌ Tylko inicjator lub użytkownik z rolą `Lider` może zakończyć kontrakt.", ephemeral=True)
+            return
+
+        uczestnicy = kontrakt["uczestnicy"]
+        for uid in uczestnicy:
+            str_uid = str(uid)
+            init_user(str_uid)
+            user_data[str_uid]["punkty"] += 3
+            user_data[str_uid]["kable"] += 1
+
+        with open("dane.json", "w") as f:
+            json.dump(user_data, f)
+
+        uczestnicy_mentions = ", ".join([f"<@{uid}>" for uid in uczestnicy])
         embed = discord.Embed(
-            title=f"{cfg['emoji']} {cfg['title']} — {outcome}",
-            description=f"👤 **Zakończył:** {interaction.user.mention}\n👥 **Uczestnicy:** {', '.join(f'<@{x}>' for x in users)}\n⭐ **{points} pkt dla każdej osoby**\n\n💙 **AUREN FAMILY**",
-            color=0x2ECC71 if result != "loss" else 0xE67E22,
+            title="📦 Kontrakt Zakończony",
+            description=(
+                f"Kontrakt **kable** został zakończony przez inicjatora.\n\n"
+                f"👤 **Inicjator:** {kontrakt['inicjator'].mention}\n"
+                f"👥 **Uczestnicy:** {uczestnicy_mentions}\n\n"
+                f"🎉 Gratulacje dla wszystkich uczestników!"
+            ),
+            color=0xf39c12
         )
-        try:
-            await interaction.message.edit(embed=embed, view=None)
-        except discord.HTTPException:
-            pass
-        await reply(interaction, "✅ Aktywność rozliczona.")
-        await refresh_stats(interaction.guild)
 
-    async def cancel_callback(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            return
-        contract = active_contract(interaction.guild.id, self.contract_type)
-        if not contract:
-            await reply(interaction, "❌ Ta aktywność nie jest już aktywna."); return
-        if interaction.user.id != int(contract["initiator_id"]) and not is_manager(interaction.user):
-            await reply(interaction, "❌ Anulować może tylko inicjator lub administracja."); return
-        with db() as con:
-            con.execute("DELETE FROM active_contracts WHERE guild_id=? AND contract_type=?", (interaction.guild.id,self.contract_type))
-        try:
-            await interaction.message.edit(embed=discord.Embed(title="🗑️ Aktywność anulowana", description=f"Anulował: {interaction.user.mention}", color=0x95A5A6), view=None)
-        except discord.HTTPException:
-            pass
-        await reply(interaction, "✅ Aktywność anulowana.")
-
-
-class LotteryView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Weź udział", emoji="🎟️", style=discord.ButtonStyle.success, custom_id="auren:lottery:join")
-    async def join(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not interaction.guild:
-            return
-        row = get_user(interaction.guild.id, interaction.user.id)
-        if row["points"] < LOTTERY_MIN_POINTS:
-            await reply(interaction, f"❌ Potrzebujesz **{LOTTERY_MIN_POINTS} pkt**. Masz **{row['points']} pkt**."); return
-        try:
-            with db() as con:
-                con.execute("INSERT INTO lottery_participants(guild_id,user_id,joined_at) VALUES(?,?,?)", (interaction.guild.id,interaction.user.id,datetime.now(TZ).isoformat()))
-        except sqlite3.IntegrityError:
-            await reply(interaction, "⚠️ Jesteś już zapisany."); return
-        await reply(interaction, "✅ Zapisano do loterii AUREN. Powodzenia! 🍀")
-        await refresh_lottery(interaction.guild)
-
-    @discord.ui.button(label="Wypisz mnie", emoji="🚪", style=discord.ButtonStyle.secondary, custom_id="auren:lottery:leave")
-    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not interaction.guild:
-            return
-        with db() as con:
-            result = con.execute("DELETE FROM lottery_participants WHERE guild_id=? AND user_id=?", (interaction.guild.id,interaction.user.id))
-        if result.rowcount == 0:
-            await reply(interaction, "⚠️ Nie jesteś zapisany."); return
-        await reply(interaction, "✅ Wypisano z loterii.")
-        await refresh_lottery(interaction.guild)
-
-
-class StatsView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Pobierz raport", emoji="📁", style=discord.ButtonStyle.primary, custom_id="auren:stats:download")
-    async def download(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_manager(interaction.user):
-            await reply(interaction, "❌ Tylko administracja może pobrać raport."); return
-        rows = get_ranking(interaction.guild.id)
-        lines = ["Miejsce;User ID;Punkty;Green;Blue;White;Cenna;Spisek;Kable;CAPT"]
-        for i,row in enumerate(rows,1):
-            lines.append(";".join(map(str,[i,row['user_id'],row['points'],row['green'],row['blue'],row['white'],row['cenna'],row['spisek'],row['kable'],row['capt']])))
-        path = DATA_DIR / "auren_statystyki.csv"
-        path.write_text("\n".join(lines), encoding="utf-8-sig")
-        await interaction.response.send_message("📎 Raport AUREN:", file=discord.File(path), ephemeral=True)
-
-    @discord.ui.button(label="Odśwież", emoji="🔄", style=discord.ButtonStyle.secondary, custom_id="auren:stats:refresh")
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if interaction.guild:
-            await interaction.response.defer(ephemeral=True)
-            await refresh_stats(interaction.guild)
-            await interaction.followup.send("✅ Statystyki odświeżone.", ephemeral=True)
-
-
-class CaptSignupView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Wystaw mnie", emoji="✅", style=discord.ButtonStyle.success, custom_id="auren:signup:join")
-    async def join(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not interaction.guild: return
-        with db() as con:
-            con.execute("""INSERT INTO capt_signup(guild_id,user_id,joined_at) VALUES(?,?,?)
-                ON CONFLICT(guild_id,user_id) DO UPDATE SET joined_at=excluded.joined_at""",
-                (interaction.guild.id,interaction.user.id,datetime.now(TZ).isoformat()))
-        await reply(interaction, "✅ Zapisano na listę CAPT.")
-        await refresh_capt_signup(interaction.guild, interaction.message)
-
-    @discord.ui.button(label="Wypisz mnie", emoji="❌", style=discord.ButtonStyle.danger, custom_id="auren:signup:leave")
-    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not interaction.guild: return
-        with db() as con:
-            row = con.execute("SELECT joined_at FROM capt_signup WHERE guild_id=? AND user_id=?", (interaction.guild.id,interaction.user.id)).fetchone()
-            if not row:
-                await reply(interaction, "⚠️ Nie jesteś zapisany."); return
-            if datetime.now(TZ) - datetime.fromisoformat(row["joined_at"]) > timedelta(minutes=15):
-                await reply(interaction, "❌ Minęło ponad 15 minut. Poproś administrację o wypisanie."); return
-            con.execute("DELETE FROM capt_signup WHERE guild_id=? AND user_id=?", (interaction.guild.id,interaction.user.id))
-        await reply(interaction, "✅ Wypisano z listy.")
-        await refresh_capt_signup(interaction.guild, interaction.message)
-
-    @discord.ui.button(label="Wyczyść listę", emoji="🧹", style=discord.ButtonStyle.secondary, custom_id="auren:signup:clear")
-    async def clear(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_manager(interaction.user):
-            await reply(interaction, "❌ Tylko administracja może wyczyścić listę."); return
-        with db() as con:
-            con.execute("DELETE FROM capt_signup WHERE guild_id=?", (interaction.guild.id,))
-        await reply(interaction, "✅ Lista wyczyszczona.")
-        await refresh_capt_signup(interaction.guild, interaction.message)
-
-
-async def refresh_capt_signup(guild: discord.Guild, message: discord.Message) -> None:
-    with db() as con:
-        rows = con.execute("SELECT user_id,joined_at FROM capt_signup WHERE guild_id=? ORDER BY joined_at", (guild.id,)).fetchall()
-    listing = "\n".join(f"`{i}.` <@{row['user_id']}> — ⏰ {datetime.fromisoformat(row['joined_at']).astimezone(TZ).strftime('%H:%M')}" for i,row in enumerate(rows,1)) or "*Brak zgłoszonych.*"
-    embed = discord.Embed(title="🎯 AUREN — wystawienie na CAPT", description=listing+"\n\n❗ Samodzielne wypisanie jest możliwe przez 15 minut.", color=0x3498DB)
-    await message.edit(embed=embed, view=CaptSignupView())
-
-# ============================= BOT =============================
-class AurenBot(commands.Bot):
-    def __init__(self) -> None:
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
-        super().__init__(command_prefix=commands.when_mentioned_or("!"), intents=intents, help_command=None)
-
-    async def setup_hook(self) -> None:
-        init_database()
-        for contract_type in CONTRACTS:
-            self.add_view(ContractView(contract_type))
-        self.add_view(LotteryView()); self.add_view(StatsView()); self.add_view(CaptSignupView())
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            log.info("Komendy zsynchronizowane z serwerem %s", GUILD_ID)
+        kanal = interaction.channel
+        if kontrakt["msg_id"]:
+            try:
+                await kontrakt["message"].edit(content="", embed=embed, view=None)
+            except:
+                await kanal.send(embed=embed)
         else:
-            await self.tree.sync()
-            log.info("Komendy zsynchronizowane globalnie")
-        for loop in (scheduler_loop, stats_refresh_loop, contract_reminder_loop):
-            if not loop.is_running():
-                loop.start()
+            await kanal.send(embed=embed)
 
-    async def on_ready(self) -> None:
-        if self.user:
-            await self.change_presence(activity=discord.Game(name="AUREN FAMILY | /pomoc"))
-            log.info("Zalogowano jako %s (%s)", self.user, self.user.id)
+        del active_kable_contracts[self.guild_id]
+        await odswiez_statystyki(interaction.guild)
 
-    async def on_message(self, message: discord.Message) -> None:
-        if message.author.bot or not message.guild:
+from discord.ui import View, Button
+
+active_cenna_contracts = {}
+
+class CennaKontraktView(View):
+    def __init__(self, interaction, guild_id):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.inicjator = interaction.user
+        self.kontrakt_msg = None
+        active_cenna_contracts[guild_id] = {
+            "inicjator": self.inicjator,
+            "uczestnicy": set([self.inicjator.id]),
+            "msg_id": None,
+        }
+
+    async def update_message(self, channel):
+        kontrakt = active_cenna_contracts[self.guild_id]
+        uczestnicy = kontrakt["uczestnicy"]
+        mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy)
+
+        content = (
+            f"🔫 **Kontrakt CENNA rozpoczęty przez {self.inicjator.mention}!**\n"
+            f"👥 Uczestnicy ({len(uczestnicy)}): {mentions}\n"
+            f"Kliknij przycisk, aby dołączyć do kontraktu. Potrzeba minimum 2 osób."
+        )
+
+        if self.kontrakt_msg:
+            try:
+                await self.kontrakt_msg.edit(content=content, view=self)
+            except:
+                pass
+
+    @discord.ui.button(label="📥 Zapisz się na cenną", style=discord.ButtonStyle.primary)
+    async def join_button(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_cenna_contracts[self.guild_id]
+        kontrakt["uczestnicy"].add(interaction.user.id)
+        await interaction.response.send_message("✅ Dołączyłeś do kontraktu cenna.", ephemeral=True)
+        await self.update_message(interaction.channel)
+
+    @discord.ui.button(label="📤 Opuść cenną", style=discord.ButtonStyle.secondary)
+    async def leave_button(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_cenna_contracts[self.guild_id]
+        if interaction.user.id in kontrakt["uczestnicy"]:
+            kontrakt["uczestnicy"].remove(interaction.user.id)
+            await interaction.response.send_message("🚪 Opuściłeś kontrakt cenna.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Nie jesteś zapisany do tego kontraktu.", ephemeral=True)
+        await self.update_message(interaction.channel)
+
+    @discord.ui.button(label="✅ Zakończ kontrakt", style=discord.ButtonStyle.success)
+    async def finish_button(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_cenna_contracts.get(self.guild_id)
+        if not kontrakt or kontrakt["inicjator"].id != interaction.user.id:
+            await interaction.response.send_message("❌ Tylko inicjator może zakończyć kontrakt.", ephemeral=True)
             return
-        with db() as con:
-            own = con.execute("SELECT reason FROM afk WHERE guild_id=? AND user_id=?", (message.guild.id,message.author.id)).fetchone()
-            if own:
-                con.execute("DELETE FROM afk WHERE guild_id=? AND user_id=?", (message.guild.id,message.author.id))
-                await message.channel.send(f"👋 {message.author.mention}, usunięto status AFK.", delete_after=8)
-            for member in message.mentions:
-                row = con.execute("SELECT reason,since FROM afk WHERE guild_id=? AND user_id=?", (message.guild.id,member.id)).fetchone()
-                if row:
-                    since = datetime.fromisoformat(row["since"]).astimezone(TZ).strftime("%H:%M")
-                    await message.channel.send(f"💤 {member.mention} jest AFK od **{since}**. Powód: **{row['reason']}**", delete_after=12)
-        await self.process_commands(message)
 
-bot = AurenBot()
+        uczestnicy = kontrakt["uczestnicy"]
+        if len(uczestnicy) < 2:
+            await interaction.response.send_message("⚠️ Do zakończenia kontraktu **cenna** potrzebne są minimum 2 osoby.", ephemeral=True)
+            return
 
-# ============================= COMMANDS =============================
-@bot.tree.command(name="pomoc", description="Pokazuje komendy AUREN")
-async def pomoc(interaction: discord.Interaction) -> None:
-    embed = discord.Embed(title="💙 AUREN FAMILY — KOMENDY", description=(
-        "**Aktywność:** `/kuriergreen` `/kurierblue` `/kurierwhite` `/cenna` `/spisek` `/kable` `/capt`\n"
-        "**Rodzina:** `/statystyki` `/loteria` `/wystawmnie` `/godzinachaosu` `/biuroall` `/afk`\n"
-        "**Administracja:** `/reset_statystyki` `/reset_loterii` `/anuluj_aktywnosc`"
-    ), color=0x2980B9)
-    await reply(interaction, embed=embed)
+        for uid in uczestnicy:
+            str_uid = str(uid)
+            init_user(str_uid)
+            user_data[str_uid]["punkty"] += 5
+            user_data[str_uid]["cenna"] += 1
+        with open("dane.json", "w") as f:
+            json.dump(user_data, f)
 
+        mentions = ", ".join([f"<@{uid}>" for uid in uczestnicy])
+        embed = discord.Embed(
+            title="🔫 Kontrakt Zakończony",
+            description=(
+                f"Kontrakt **cenna partia** został zakończony przez inicjatora.\n\n"
+                f"👤 **Inicjator:** {kontrakt['inicjator'].mention}\n"
+                f"👥 **Uczestnicy:** {mentions}\n\n"
+                f"🎉 Gratulacje dla wszystkich uczestników!"
+            ),
+            color=0xff0000
+        )
 
-@bot.tree.command(name="ping", description="Sprawdza działanie bota")
-async def ping(interaction: discord.Interaction) -> None:
-    await reply(interaction, f"🏓 Pong! **{round(bot.latency*1000)} ms**")
+        kanal = interaction.channel
+        if kontrakt["msg_id"]:
+            try:
+                await self.kontrakt_msg.edit(content="", embed=embed, view=None)
+            except:
+                await kanal.send(embed=embed)
+        else:
+            await kanal.send(embed=embed)
 
+        del active_cenna_contracts[self.guild_id]
+        await odswiez_statystyki(interaction.guild)
 
-async def courier(interaction: discord.Interaction, kind: str) -> None:
-    if not interaction.guild:
-        await reply(interaction, "❌ Komenda działa tylko na serwerze."); return
-    remaining = cooldown_remaining(interaction.guild.id, interaction.user.id, f"courier_{kind}", COURIER_COOLDOWN_MINUTES)
-    if remaining:
-        await reply(interaction, f"⏳ Spróbuj ponownie za **{format_remaining(remaining)}**."); return
-    chaos = get_setting(interaction.guild.id, "chaos_active") == "1"
-    points = 3 if chaos else 1
-    set_cooldown(interaction.guild.id, interaction.user.id, f"courier_{kind}")
-    add_activity(interaction.guild.id, interaction.user.id, kind, points)
-    emoji = {"green":"🌿","blue":"💙","white":"🤍"}[kind]
-    embed = discord.Embed(title=f"{emoji} Kontrakt kurierski zakończony", description=f"👤 {interaction.user.mention}\n⭐ **{points} pkt**" + ("\n🌀 Premia Chaosu ×3!" if chaos else ""), color={"green":0x2ECC71,"blue":0x3498DB,"white":0xECF0F1}[kind])
-    await reply(interaction, embed=embed, ephemeral=False)
-    await refresh_stats(interaction.guild)
+active_spisek_contracts = {}
 
+class SpisekKontraktView(View):
+    def __init__(self, interaction, guild_id):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.inicjator = interaction.user
+        self.kontrakt_msg = None
+        active_spisek_contracts[guild_id] = {
+            "inicjator": self.inicjator,
+            "uczestnicy": set([self.inicjator.id]),
+            "msg_id": None,
+        }
 
-@bot.tree.command(name="kuriergreen", description="Zakończ kuriera green")
-async def kuriergreen(interaction: discord.Interaction) -> None: await courier(interaction, "green")
-@bot.tree.command(name="kurierblue", description="Zakończ kuriera blue")
-async def kurierblue(interaction: discord.Interaction) -> None: await courier(interaction, "blue")
-@bot.tree.command(name="kurierwhite", description="Zakończ kuriera white")
-async def kurierwhite(interaction: discord.Interaction) -> None: await courier(interaction, "white")
-@bot.tree.command(name="cenna", description="Rozpocznij cenną partię")
-async def cenna(interaction: discord.Interaction) -> None: await create_contract(interaction, "cenna")
-@bot.tree.command(name="spisek", description="Rozpocznij spisek")
-async def spisek(interaction: discord.Interaction) -> None: await create_contract(interaction, "spisek")
-@bot.tree.command(name="kable", description="Rozpocznij kable")
-async def kable(interaction: discord.Interaction) -> None: await create_contract(interaction, "kable")
-@bot.tree.command(name="capt", description="Rozpocznij CAPT")
-async def capt(interaction: discord.Interaction) -> None: await create_contract(interaction, "capt")
+    async def update_message(self, channel):
+        kontrakt = active_spisek_contracts[self.guild_id]
+        uczestnicy = kontrakt["uczestnicy"]
+        mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy)
 
+        content = (
+            f"🧠 **Rozpoczęto kontrakt spisek!**\n"
+            f"👤 Inicjator: {self.inicjator.mention}\n"
+            f"👥 Uczestnicy ({len(uczestnicy)}): {mentions}\n"
+            f"Zalecane min. 2 osoby."
+        )
 
-@bot.tree.command(name="statystyki", description="Publikuje statystyki AUREN")
-async def statystyki(interaction: discord.Interaction) -> None:
-    if interaction.guild:
-        await interaction.response.defer(ephemeral=True)
-        await refresh_stats(interaction.guild)
-        await interaction.followup.send("✅ Statystyki opublikowane.", ephemeral=True)
+        if self.kontrakt_msg:
+            try:
+                await self.kontrakt_msg.edit(content=content, view=self)
+            except:
+                pass
 
+    @discord.ui.button(label="🧠 Dołącz do spisku", style=discord.ButtonStyle.primary)
+    async def join_spisek(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_spisek_contracts[self.guild_id]
+        kontrakt["uczestnicy"].add(interaction.user.id)
+        await interaction.response.send_message("✅ Dołączyłeś do spisku.", ephemeral=True)
+        await self.update_message(interaction.channel)
 
-@bot.tree.command(name="loteria", description="Tworzy lub odświeża loterię")
-async def loteria(interaction: discord.Interaction) -> None:
-    if interaction.guild:
-        await interaction.response.defer(ephemeral=True)
-        await refresh_lottery(interaction.guild)
-        await interaction.followup.send("✅ Loteria odświeżona.", ephemeral=True)
+    @discord.ui.button(label="🚪 Opuść spisek", style=discord.ButtonStyle.secondary)
+    async def leave_spisek(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_spisek_contracts[self.guild_id]
+        if interaction.user.id in kontrakt["uczestnicy"]:
+            kontrakt["uczestnicy"].remove(interaction.user.id)
+            await interaction.response.send_message("👋 Opuściłeś spisek.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Nie jesteś zapisany do spisku.", ephemeral=True)
+        await self.update_message(interaction.channel)
 
+    @discord.ui.button(label="✅ Zakończ spisek", style=discord.ButtonStyle.success)
+    async def finish_spisek(self, interaction: discord.Interaction, button: Button):
+        kontrakt = active_spisek_contracts.get(self.guild_id)
+        if not kontrakt or kontrakt["inicjator"].id != interaction.user.id:
+            await interaction.response.send_message("❌ Tylko inicjator może zakończyć spisek.", ephemeral=True)
+            return
 
-@bot.tree.command(name="wystawmnie", description="Tworzy listę zgłoszeń na CAPT")
-async def wystawmnie(interaction: discord.Interaction) -> None:
-    if not interaction.guild: return
-    with db() as con:
-        con.execute("""INSERT INTO capt_signup(guild_id,user_id,joined_at) VALUES(?,?,?)
-            ON CONFLICT(guild_id,user_id) DO UPDATE SET joined_at=excluded.joined_at""",
-            (interaction.guild.id,interaction.user.id,datetime.now(TZ).isoformat()))
-    embed = discord.Embed(title="🎯 AUREN — wystawienie na CAPT", description=f"`1.` {interaction.user.mention}\n\n❗ Wypisanie możliwe przez 15 minut.", color=0x3498DB)
-    await interaction.response.send_message(embed=embed, view=CaptSignupView())
+        uczestnicy = kontrakt["uczestnicy"]
+        for uid in uczestnicy:
+            str_uid = str(uid)
+            init_user(str_uid)
+            user_data[str_uid]["punkty"] += 3
+            user_data[str_uid]["spisek"] += 1
+        with open("dane.json", "w") as f:
+            json.dump(user_data, f)
 
+        mentions = ", ".join([f"<@{uid}>" for uid in uczestnicy])
+        embed = discord.Embed(
+            title="🧠 Spisek zakończony",
+            description=(
+                f"Kontrakt **spisek** został zakończony przez inicjatora.\n\n"
+                f"👤 **Inicjator:** {kontrakt['inicjator'].mention}\n"
+                f"👥 **Uczestnicy:** {mentions}\n\n"
+                f"🔎 Zalecana liczba uczestników: 2+\n🎉 Punkty przyznane!"
+            ),
+            color=0x9b59b6
+        )
 
-@bot.tree.command(name="biuroall", description="Wzywa rodzinę na zbiórkę")
-async def biuroall(interaction: discord.Interaction) -> None:
-    if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_manager(interaction.user):
-        await reply(interaction, "❌ Komenda tylko dla administracji."); return
-    channel = find_channel(interaction.guild, GATHERING_CHANNEL)
-    if not channel:
-        await reply(interaction, f"❌ Nie znaleziono kanału **{GATHERING_CHANNEL}**."); return
-    await reply(interaction, "✅ Rozpoczynam wezwanie.")
-    for i in range(5):
-        await channel.send("@everyone 🚨 **AUREN FAMILY — ZBIÓRKA!** Rozpoczęliśmy CAPT. Wszyscy do biura! 🏃")
-        if i < 4: await asyncio.sleep(5)
+        kanal = interaction.channel
+        if kontrakt["msg_id"]:
+            try:
+                await self.kontrakt_msg.edit(content="", embed=embed, view=None)
+            except:
+                await kanal.send(embed=embed)
+        else:
+            await kanal.send(embed=embed)
 
+        del active_spisek_contracts[self.guild_id]
+        await odswiez_statystyki(interaction.guild)
 
-@bot.tree.command(name="godzinachaosu", description="Pokazuje dzisiejszą Godzinę Chaosu")
-async def godzinachaosu(interaction: discord.Interaction) -> None:
-    if not interaction.guild: return
-    if get_setting(interaction.guild.id, "chaos_active") == "1":
-        text = "🌀 **Godzina Chaosu trwa teraz!**"
-    elif get_setting(interaction.guild.id, "chaos_at"):
-        dt = datetime.fromisoformat(get_setting(interaction.guild.id, "chaos_at")).astimezone(TZ)
-        text = f"🕒 Dzisiaj: **{dt.strftime('%H:%M')}–{(dt+timedelta(hours=1)).strftime('%H:%M')}**"
-    else:
-        text = "🎲 Godzina Chaosu nie została jeszcze wylosowana."
-    await reply(interaction, text)
+        kanal = interaction.channel
+        if kontrakt["msg_id"]:
+            try:
+                msg = await kanal.fetch_message(kontrakt["msg_id"])
+                await msg.edit(content="", embed=embed, view=None)
+            except:
+                await kanal.send(embed=embed)
+        else:
+            await kanal.send(embed=embed)
 
+        del active_spisek_contracts[self.guild_id]
+        await odswiez_statystyki(interaction.guild)
 
-@bot.tree.command(name="afk", description="Ustawia status AFK")
-@app_commands.describe(powod="Opcjonalny powód")
-async def afk(interaction: discord.Interaction, powod: str = "Brak podanego powodu") -> None:
-    if not interaction.guild: return
-    reason = powod[:200]
-    with db() as con:
-        con.execute("""INSERT INTO afk(guild_id,user_id,reason,since) VALUES(?,?,?,?)
-            ON CONFLICT(guild_id,user_id) DO UPDATE SET reason=excluded.reason,since=excluded.since""",
-            (interaction.guild.id,interaction.user.id,reason,datetime.now(TZ).isoformat()))
-    await reply(interaction, f"💤 Ustawiono AFK: **{reason}**", ephemeral=False)
+from discord.ext import tasks
 
+from datetime import datetime, time
+import pytz
 
-@bot.tree.command(name="reset_statystyki", description="Resetuje statystyki")
-@app_commands.describe(potwierdzenie="Wpisz RESETUJ")
-async def reset_statystyki(interaction: discord.Interaction, potwierdzenie: str) -> None:
-    if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_manager(interaction.user):
-        await reply(interaction, "❌ Komenda tylko dla administracji."); return
-    if potwierdzenie.strip().upper() != "RESETUJ":
-        await reply(interaction, "❌ Wpisz dokładnie **RESETUJ**."); return
-    with db() as con:
-        con.execute("DELETE FROM users WHERE guild_id=?", (interaction.guild.id,))
-        con.execute("DELETE FROM cooldowns WHERE guild_id=?", (interaction.guild.id,))
-    await interaction.response.defer(ephemeral=True)
-    await refresh_stats(interaction.guild)
-    await interaction.followup.send("✅ Statystyki zresetowane.", ephemeral=True)
+@tasks.loop(minutes=1)
+async def przypomnienie_cenna():
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw")).time()
+    if teraz.hour == 14 and teraz.minute == 0:
+        for guild in bot.guilds:
+            kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+            if kanal:
+                await kanal.send("📦 **Kontrakt `/cenna` dostępny od 14:00!** Wymagana minimum 2-osobowa ekipa. 🕑")
 
+import pytz  # upewnij się, że masz zaimportowane
 
-@bot.tree.command(name="reset_loterii", description="Czyści loterię")
-@app_commands.describe(potwierdzenie="Wpisz RESETUJ")
-async def reset_loterii(interaction: discord.Interaction, potwierdzenie: str) -> None:
-    if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_manager(interaction.user):
-        await reply(interaction, "❌ Komenda tylko dla administracji."); return
-    if potwierdzenie.strip().upper() != "RESETUJ":
-        await reply(interaction, "❌ Wpisz dokładnie **RESETUJ**."); return
-    with db() as con:
-        con.execute("DELETE FROM lottery_participants WHERE guild_id=?", (interaction.guild.id,))
-    await interaction.response.defer(ephemeral=True)
-    await refresh_lottery(interaction.guild)
-    await interaction.followup.send("✅ Loteria wyczyszczona.", ephemeral=True)
+@tasks.loop(minutes=1)
+async def ogloszenie_top_usera():
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw"))
+    if teraz.hour == 10 and teraz.minute == 0:
+        for guild in bot.guilds:
+            kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+            if not kanal:
+                continue
 
+            if not user_data:
+                continue
 
-@bot.tree.command(name="anuluj_aktywnosc", description="Awaryjnie usuwa aktywną akcję")
-@app_commands.choices(typ=[
-    app_commands.Choice(name="Cenna", value="cenna"), app_commands.Choice(name="Spisek", value="spisek"),
-    app_commands.Choice(name="Kable", value="kable"), app_commands.Choice(name="CAPT", value="capt")])
-async def anuluj_aktywnosc(interaction: discord.Interaction, typ: app_commands.Choice[str]) -> None:
-    if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_manager(interaction.user):
-        await reply(interaction, "❌ Komenda tylko dla administracji."); return
-    contract = active_contract(interaction.guild.id, typ.value)
-    if not contract:
-        await reply(interaction, "⚠️ Ta aktywność nie jest uruchomiona."); return
-    with db() as con:
-        con.execute("DELETE FROM active_contracts WHERE guild_id=? AND contract_type=?", (interaction.guild.id,typ.value))
-    await reply(interaction, "✅ Aktywność anulowana.")
+            top = sorted(user_data.items(), key=lambda x: x[1]["punkty"], reverse=True)
+            if not top or top[0][1]["punkty"] <= 0:
+                continue
 
-# ============================= TASKS =============================
-async def send_chat(guild: discord.Guild, text: str) -> None:
-    channel = find_channel(guild, CHAT_CHANNEL)
-    if channel:
-        await channel.send(text)
+            uid, dane = top[0]
+            await kanal.send(
+                f"🌟 **Dzień dobry!**\n\n"
+                f"🏆 Aktualnym liderem aktywności jest: <@{uid}> z **{dane['punkty']} punktami**!\n"
+                f"Gratulacje za zaangażowanie! 👏\n\n"
+                f"🚀 Dołącz do rywalizacji – każda aktywność się liczy!"
+            )
+
+@tasks.loop(minutes=1)
+async def chaos_loop():
+    global aktywny_chaos, godzina_chaosu
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw"))
+
+    print(f"[CHAOS DEBUG] teraz={teraz.strftime('%H:%M')}, godzina_chaosu={godzina_chaosu}")
+
+    if godzina_chaosu and teraz.hour == godzina_chaosu.hour and teraz.minute == godzina_chaosu.minute:
+        if not aktywny_chaos:
+            aktywny_chaos = True
+            print("[CHAOS] Godzina Chaosu rozpoczęta!")
+
+            for guild in bot.guilds:
+                kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+                if kanal:
+                    await kanal.send("@everyone ⚠️ **GODZINA CHAOSU ROZPOCZĘTA!**\n"
+                                     "Wszystkie kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` dają **x3 punkty** przez 60 minut!")
+
+            asyncio.create_task(zakonczenie_chaosu())
+
+async def zakonczzenie_chaosu():
+    global aktywny_chaos, godzina_chaosu
+    await asyncio.sleep(60 * 60)  # 60 minut
+    aktywny_chaos = False
+    godzina_chaosu = None
+    print("[CHAOS] Chaos zakończony.")
+
+    for guild in bot.guilds:
+        kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+        if kanal:
+            await kanal.send("✅ **Godzina Chaosu zakończona!** Wszystko wraca do normy.")
 
 
 @tasks.loop(minutes=1)
-async def scheduler_loop() -> None:
-    now = datetime.now(TZ)
+async def losuj_godzine_chaosu():
+    global godzina_chaosu
+    teraz = datetime.now(pytz.timezone("Europe/Warsaw"))
+
+    if godzina_chaosu is None:
+        losowa_godzina = random.randint(14, 20)  # <-- zmieniony zakres
+        losowa_minuta = random.randint(0, 59)
+        godzina_chaosu = datetime.strptime(f"{losowa_godzina}:{losowa_minuta}", "%H:%M").time()
+
+        print(f"[CHAOS] Wylosowano: {godzina_chaosu.strftime('%H:%M')}")
+
+        for guild in bot.guilds:
+            kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+            if kanal:
+                await kanal.send(
+                    f"📢 **Godzina Chaosu** została wylosowana!\n"
+                    f"🎲 Kontrakty `/kuriergreen`, `/kurierblue` i `/kurierwhite` będą liczone x3 "
+                    f"w godzinie **{godzina_chaosu.strftime('%H:%M')} - "
+                    f"{(datetime.combine(datetime.today(), godzina_chaosu) + timedelta(hours=1)).time().strftime('%H:%M')}**!"
+                )
+
+from discord.ext import tasks
+from datetime import datetime, time
+import zoneinfo
+
+@tasks.loop(time=time(8, 0, tzinfo=zoneinfo.ZoneInfo("Europe/Warsaw")))
+async def poranne_powitanie():
+    teraz = datetime.now(zoneinfo.ZoneInfo("Europe/Warsaw"))
+    dzien_tygodnia = teraz.strftime("%A").capitalize()
+    data = teraz.strftime("%d.%m.%Y")
+
     for guild in bot.guilds:
-        if now.hour == 8 and now.minute == 0 and get_setting(guild.id,"morning") != str(now.date()):
-            set_setting(guild.id,"morning",str(now.date()))
-            days = ["poniedziałek","wtorek","środa","czwartek","piątek","sobota","niedziela"]
-            await send_chat(guild, f"📅 Dziś jest **{days[now.weekday()]}, {now.strftime('%d.%m.%Y')}**\n💙 AUREN FAMILY — udanego dnia! 💪")
-        if now.hour == 10 and now.minute == 0 and get_setting(guild.id,"top") != str(now.date()):
-            set_setting(guild.id,"top",str(now.date()))
-            rows = get_ranking(guild.id)
-            if rows:
-                await send_chat(guild, f"🌟 Lider aktywności AUREN: <@{rows[0]['user_id']}> — **{rows[0]['points']} pkt**! 👏")
-        if now.hour == 14 and now.minute == 0 and get_setting(guild.id,"cenna_reminder") != str(now.date()):
-            set_setting(guild.id,"cenna_reminder",str(now.date()))
-            await send_chat(guild, "🔫 Kontrakt **`/cenna`** jest dostępny. Zbierz minimum 2 osoby!")
-        if get_setting(guild.id,"chaos_date") != str(now.date()):
-            dt = now.replace(hour=random.randint(14,20), minute=random.randint(0,59), second=0, microsecond=0)
-            set_setting(guild.id,"chaos_date",str(now.date())); set_setting(guild.id,"chaos_at",dt.isoformat()); set_setting(guild.id,"chaos_active","0")
-            await send_chat(guild, f"🎲 **Godzina Chaosu AUREN:** {dt.strftime('%H:%M')}–{(dt+timedelta(hours=1)).strftime('%H:%M')}! Kurierzy dają wtedy ×3.")
-        chaos_value = get_setting(guild.id,"chaos_at")
-        if chaos_value:
-            dt = datetime.fromisoformat(chaos_value).astimezone(TZ)
-            active = get_setting(guild.id,"chaos_active") == "1"
-            if dt <= now < dt+timedelta(hours=1) and not active:
-                set_setting(guild.id,"chaos_active","1")
-                await send_chat(guild, "@everyone 🌀 **GODZINA CHAOSU AUREN ROZPOCZĘTA!** Kurierzy dają ×3 punkty!")
-            elif now >= dt+timedelta(hours=1) and active:
-                set_setting(guild.id,"chaos_active","0")
-                await send_chat(guild, "✅ Godzina Chaosu zakończona.")
-        if now.weekday() == 6 and now.hour == 16 and now.minute == 0 and get_setting(guild.id,"lottery_reminder") != str(now.date()):
-            set_setting(guild.id,"lottery_reminder",str(now.date()))
-            ch = find_channel(guild, LOTTERY_CHANNEL)
-            await send_chat(guild, f"@everyone 🎰 **Loteria AUREN za godzinę!** Zapisz się w {ch.mention if ch else '#'+LOTTERY_CHANNEL}.")
-        if now.weekday() == 6 and now.hour == 17 and now.minute == 0 and get_setting(guild.id,"lottery_draw") != str(now.date()):
-            set_setting(guild.id,"lottery_draw",str(now.date()))
-            with db() as con:
-                rows = con.execute("SELECT user_id FROM lottery_participants WHERE guild_id=?", (guild.id,)).fetchall()
-            result = f"@everyone 🎉 **WYNIKI LOTERII AUREN!** Nagrodę **{LOTTERY_PRIZE}** zdobywa <@{random.choice(rows)['user_id']}>! 🤑" if rows else "🎰 Loteria zakończona — brak uczestników."
-            ch = find_channel(guild, LOTTERY_CHANNEL)
-            if ch: await ch.send(result)
-            await send_chat(guild, result)
-            with db() as con:
-                con.execute("DELETE FROM lottery_participants WHERE guild_id=?", (guild.id,))
-            await refresh_lottery(guild)
+        kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+        if kanal:
+            await kanal.send(
+                f"📅 Dziś jest **{dzien_tygodnia}, {data}**\n"
+                f"Życzymy wszystkim udanego dnia i dużo aktywności! 💪🔥"
+            )
 
+@bot.event
+async def on_ready():
+    await tree.sync()
+    print(f"✅ Zalogowano jako {bot.user}")
+    print("📤 Komendy zostały zsynchronizowane globalnie.")
 
-@scheduler_loop.before_loop
-async def before_scheduler() -> None: await bot.wait_until_ready()
+    # 📂 Wczytaj dane loterii z pliku
+    load_lottery_data()
+    print("📂 Dane loterii wczytane:", lottery_participants)
 
+    # 🔁 Przywróć widoki do istniejących wiadomości loterii
+    for guild in bot.guilds:
+        if guild.id in lottery_messages:
+            bot.add_view(LotteryView(guild.id))
+
+    # 🚀 Uruchom zaplanowane zadania
+    przypomnienie_loteria.start()
+    uruchom_loterie.start()
+    przypomnienie_cenna.start()
+    ogloszenie_top_usera.start()
+    chaos_loop.start()               
+    losuj_godzine_chaosu.start()
+    poranne_powitanie.start()
+
+    # 💾 Zapisz dane po synchronizacji
+    save_lottery_data()
+    await load_kable_data(bot)
 
 @tasks.loop(minutes=10)
-async def stats_refresh_loop() -> None:
+async def aktualizuj_wiadomosci_loterii():
+    await bot.wait_until_ready()
     for guild in bot.guilds:
-        if find_channel(guild, STATS_CHANNEL):
-            try: await refresh_stats(guild)
-            except discord.HTTPException: log.exception("Błąd odświeżania statystyk")
+        await odswiez_loterie(guild)
+
+from discord.ui import View, Button
+from discord import app_commands
+import discord
+import json
+
+active_capt_events = {}  # {guild_id: {"inicjator": user, "uczestnicy": set, "msg_id": id}}
+
+class CaptView(View):
+    def __init__(self, interaction: discord.Interaction):
+        super().__init__(timeout=None)
+        self.guild_id = interaction.guild.id
+        self.inicjator = interaction.user
+        active_capt_events[self.guild_id] = {
+            "inicjator": self.inicjator,
+            "uczestnicy": set([self.inicjator.id]),
+            "msg_id": None
+        }
+
+    async def update_embed(self, interaction):
+        capt = active_capt_events[self.guild_id]
+        uczestnicy = capt["uczestnicy"]
+        mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy)
+
+        embed = discord.Embed(
+            title="⚔️ CAPT Rozpoczęty",
+            description=(
+                f"👤 **Inicjator:** {capt['inicjator'].mention}\n"
+                f"👥 **Uczestnicy ({len(uczestnicy)}):** {mentions}\n\n"
+                f"📌 Za **capt wygrany** każdy uczestnik otrzymuje **6 pkt**, za **przegrany** – **2 pkt**."
+            ),
+            color=0xe74c3c
+        )
+
+        try:
+            message = await interaction.channel.fetch_message(capt["msg_id"])
+            await message.edit(embed=embed, view=self)
+        except:
+            pass
+
+    @discord.ui.button(label="📥 Dołącz do CAPT", style=discord.ButtonStyle.primary)
+    async def join(self, interaction: discord.Interaction, button: Button):
+        capt = active_capt_events[self.guild_id]
+        capt["uczestnicy"].add(interaction.user.id)
+        await interaction.response.send_message("✅ Dołączyłeś do CAPT.", ephemeral=True)
+        await self.update_embed(interaction)
+
+    @discord.ui.button(label="📤 Opuść CAPT", style=discord.ButtonStyle.secondary)
+    async def leave(self, interaction: discord.Interaction, button: Button):
+        capt = active_capt_events[self.guild_id]
+        if interaction.user.id in capt["uczestnicy"]:
+            capt["uczestnicy"].remove(interaction.user.id)
+            await interaction.response.send_message("🚪 Opuściłeś CAPT.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Nie jesteś zapisany do CAPT.", ephemeral=True)
+        await self.update_embed(interaction)
+
+    @discord.ui.button(label="🏁 CAPT Wygrany", style=discord.ButtonStyle.success)
+    async def win(self, interaction: discord.Interaction, button: Button):
+        await self.zakonczenie(interaction, wygrana=True)
+
+    @discord.ui.button(label="❌ CAPT Przegrany", style=discord.ButtonStyle.danger)
+    async def lose(self, interaction: discord.Interaction, button: Button):
+        await self.zakonczenie(interaction, wygrana=False)
+
+    async def zakonczenie(self, interaction: discord.Interaction, wygrana: bool):
+        capt = active_capt_events.get(self.guild_id)
+        if not capt:
+            return
+
+        if interaction.user.id != capt["inicjator"].id:
+            try:
+                await interaction.response.send_message("❌ Tylko inicjator może zakończyć CAPT.", ephemeral=True)
+            except discord.NotFound:
+                pass
+            return
+
+        uczestnicy = capt["uczestnicy"]
+        for uid in uczestnicy:
+            str_uid = str(uid)
+            init_user(str_uid)
+            user_data[str_uid]["punkty"] += 2 if wygrana else 1
+            user_data[str_uid]["capt"] += 1
+
+        with open("dane.json", "w") as f:
+            json.dump(user_data, f)
+
+        wynik = "WYGRANY" if wygrana else "PRZEGRANY"
+        kolor = 0x2ecc71 if wygrana else 0xe67e22
+        mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy)
+
+        embed = discord.Embed(
+            title=f"🎯 CAPT {wynik}",
+            description=(
+                f"👤 **Inicjator:** {capt['inicjator'].mention}\n"
+                f"👥 **Uczestnicy:** {mentions}\n\n"
+                f"🏁 CAPT został zakończony jako **{wynik}**!\n"
+                f"{'🥇 Każdy otrzymuje 6 pkt!' if wygrana else '🥈 Każdy otrzymuje 2 pkt!'}"
+            ),
+            color=kolor
+        )
+
+        try:
+            message = await interaction.channel.fetch_message(capt["msg_id"])
+            await message.edit(content="", embed=embed, view=None)
+        except:
+            await interaction.channel.send(embed=embed)
+
+        del active_capt_events[self.guild_id]
+        await odswiez_statystyki(interaction.guild)
+
+@tree.command(name="capt", description="Rozpocznij akcję CAPT – tylko dla Leaderów i Zarządu")
+@app_commands.checks.has_any_role("Leader", "Zarząd")
+async def capt(interaction: discord.Interaction):
+    view = CaptView(interaction)
+    embed = discord.Embed(
+        title="⚔️ CAPT Rozpoczęty",
+        description=(
+            f"👤 **Inicjator:** {interaction.user.mention}\n"
+            f"👥 **Uczestnicy (1):** {interaction.user.mention}\n\n"
+            f"📌 Za **capt wygrany** każdy uczestnik otrzymuje **2 pkt**, za **przegrany** – **1 pkt**."
+        ),
+        color=0xe74c3c
+    )
+    msg = await interaction.channel.send(embed=embed, view=view)
+    active_capt_events[interaction.guild.id]["msg_id"] = msg.id
+    await interaction.response.send_message("📢 CAPT rozpoczęty!", ephemeral=True)
+
+@capt.error
+async def capt_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingAnyRole):
+        await interaction.response.send_message("❌ Tylko Leader lub Zarząd może rozpocząć CAPT.", ephemeral=True)
+
+@tree.command(name="biuroall", description="Wyślij wezwanie na CAPT 5 razy co 5 sekund")
+async def biuroall(interaction: discord.Interaction):
+    await interaction.response.send_message("🔁 Wysyłam wezwanie do biura...", ephemeral=True)
+
+    kanal = discord.utils.get(interaction.guild.text_channels, name="🗣┃zbiórka")
+
+    if not kanal:
+        await interaction.followup.send("❌ Nie znaleziono kanału 🗣┃zbiórka.", ephemeral=True)
+        return
+
+    for _ in range(5):
+        await kanal.send("@everyone 🚨 **Rozpoczęliśmy CAPT!** Wszyscy obowiązkowo na zbiórkę do biura! 🏃‍♂️🏃‍♀️")
+        await asyncio.sleep(5)
+
+@tree.command(name="godzinachaosu", description="Zobacz kiedy przypada dzisiejsza Godzina Chaosu")
+@app_commands.checks.has_any_role("Leader", "Zarząd")
+async def godzinachaosu(interaction: discord.Interaction):
+    global godzina_chaosu, aktywny_chaos
+
+    if aktywny_chaos:
+        await interaction.response.send_message("🌀 **Godzina Chaosu trwa właśnie teraz!**", ephemeral=True)
+    elif godzina_chaosu:
+        await interaction.response.send_message(
+            f"🕒 Dzisiejsza **Godzina Chaosu** została zaplanowana na: **{godzina_chaosu.strftime('%H:%M')}**",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message("❗ Godzina Chaosu jeszcze nie została wylosowana.", ephemeral=True)
+
+@godzinachaosu.error
+async def godzinachaosu_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingAnyRole):
+        await interaction.response.send_message(
+            "❌ Tylko użytkownicy z rolą `Leader` lub `Zarząd` mogą sprawdzić Godzinę Chaosu.",
+            ephemeral=True
+        )
+
+from discord.ext import tasks
+
+import random
+from discord.ext import tasks
+from discord.ui import View, Button
+
+lottery_participants = {}  # {guild_id: set(user_ids)}
+lottery_messages = {}      # {guild_id: message_id}
+
+class LotteryView(View):
+    def __init__(self, guild_id, message_id=None):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.message_id = message_id
+
+    @discord.ui.button(label="🎊 Weź Udział w Loterii", style=discord.ButtonStyle.success, custom_id="loteria_zapis")
+    async def join_lottery(self, interaction: discord.Interaction, button: Button):
+        uid = str(interaction.user.id)
+        init_user(uid)
+
+        if user_data[uid]["punkty"] < 10:
+            await interaction.response.send_message(
+                "❌ Musisz mieć minimum 3 punkty aktywności, aby wziąć udział w loterii.",
+                ephemeral=True
+            )
+            return
+
+        uczestnicy = lottery_participants.setdefault(self.guild_id, set())
+        if interaction.user.id in uczestnicy:
+            await interaction.response.send_message(
+                f"⚠️ Już jesteś zapisany do loterii!\n"
+                f"🎟️ Aktualna liczba uczestników: **{len(uczestnicy)}**",
+                ephemeral=True
+            )
+            return
+
+        uczestnicy.add(interaction.user.id)
+        save_lottery_data()
+        await interaction.response.send_message(
+            f"✅ Zapisano do loterii! 🎉\n"
+            f"🎟️ Obecna liczba uczestników: **{len(uczestnicy)}**", ephemeral=True
+        )
+
+        await odswiez_loterie(interaction.guild)
+
+    @discord.ui.button(label="🔄 Resetuj Loterię", style=discord.ButtonStyle.danger, custom_id="reset_loteria")
+    async def reset_loterii(self, interaction: discord.Interaction, button: Button):
+        role_names = [role.name.lower() for role in interaction.user.roles]
+        if "lider" not in role_names and "zarząd" not in role_names:
+            await interaction.response.send_message(
+                "❌ Tylko Lider lub Zarząd może resetować loterię.",
+                ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(ResetLoteriiModal(interaction, self))
 
 
-@stats_refresh_loop.before_loop
-async def before_stats() -> None: await bot.wait_until_ready()
+@tree.command(name="loteria", description="Utwórz wiadomość loterii z przyciskiem do zapisu")
+async def loteria(interaction: discord.Interaction):
+    kanal = discord.utils.get(interaction.guild.text_channels, name="🎰┃loteria")
+    if not kanal:
+        kanal = await interaction.guild.create_text_channel("🎰┃loteria")
 
+    uczestnicy = lottery_participants.get(interaction.guild.id, set())
+    mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy) if uczestnicy else "Brak zgłoszeń"
 
-@tasks.loop(minutes=20)
-async def contract_reminder_loop() -> None:
-    for guild in bot.guilds:
-        contract = active_contract(guild.id,"kable")
-        if not contract: continue
-        missing = max(0, 5-len(participants(guild.id,"kable")))
-        if missing:
-            channel = bot.get_channel(int(contract["channel_id"]))
-            if isinstance(channel, discord.TextChannel):
-                await channel.send(f"@everyone 📦 **Kable AUREN nadal aktywne!** Potrzeba jeszcze **{missing}** osób.")
+    # Oblicz czas do niedzieli 17:00
+    teraz = datetime.now()
+    dni_do_niedzieli = (6 - teraz.weekday()) % 7
+    next_lottery_time = (teraz + timedelta(days=dni_do_niedzieli)).replace(hour=17, minute=0, second=0)
+    if next_lottery_time < teraz:
+        next_lottery_time += timedelta(days=7)
+    czas_do = next_lottery_time - teraz
+    godziny, reszta = divmod(czas_do.total_seconds(), 3600)
+    minuty = int(reszta // 60)
 
+    view = LotteryView(interaction.guild.id)
+    msg = await kanal.send(
+        "**🎰 LOTERIA TYGODNIOWA!**\n"
+        "Kliknij przycisk poniżej, aby zapisać się do loterii!\n"
+        "🔒 Wymagane minimum 10 punktów aktywności.\n"
+        "🎁 Nagroda: 50k – losowanie w każdą niedzielę o 17:00!\n\n"
+        f"⏳ **Do losowania pozostało:** {int(godziny)}h {minuty}min\n\n"
+        f"📋 **Aktualni uczestnicy:**\n{mentions}",
+        view=view
+    )
 
-@contract_reminder_loop.before_loop
-async def before_contracts() -> None: await bot.wait_until_ready()
+    lottery_messages[interaction.guild.id] = msg.id
+    await interaction.response.send_message("📨 Wiadomość loterii została wysłana!", ephemeral=True)
 
-# ============================= ERRORS / START =============================
-@bot.tree.error
-async def tree_error(interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
-    log.exception("Błąd komendy slash", exc_info=error)
+async def odswiez_loterie(guild):
+    kanal = discord.utils.get(guild.text_channels, name="🎰┃loteria")
+    if not kanal:
+        return
+
+    uczestnicy = lottery_participants.get(guild.id, set())
+    mentions = ", ".join(f"<@{uid}>" for uid in uczestnicy) if uczestnicy else "Brak zgłoszeń"
+
+    teraz = datetime.now()
+    dni_do_niedzieli = (6 - teraz.weekday()) % 7
+    next_lottery_time = (teraz + timedelta(days=dni_do_niedzieli)).replace(hour=17, minute=0, second=0)
+    if next_lottery_time < teraz:
+        next_lottery_time += timedelta(days=7)
+    czas_do = next_lottery_time - teraz
+    godziny, reszta = divmod(czas_do.total_seconds(), 3600)
+    minuty = int(reszta // 60)
+
+    msg_id = lottery_messages.get(guild.id)
+    if not msg_id:
+        return
+
     try:
-        await reply(interaction, "❌ Wystąpił błąd. Szczegóły są w logach Railway.")
-    except discord.HTTPException:
-        pass
+        msg = await kanal.fetch_message(msg_id)
+        view = LotteryView(guild.id, msg_id)
+        await msg.edit(
+            content=(
+                "**🎰 LOTERIA TYGODNIOWA!**\n"
+                "Kliknij przycisk poniżej, aby zapisać się do loterii!\n"
+                "🔒 Wymagane minimum 10 punktów aktywności.\n"
+                "🎁 Nagroda: 100k – losowanie w każdą niedzielę.\n\n"
+                f"⏳ **Do losowania pozostało:** {int(godziny)}h {minuty}min\n\n"
+                f"📋 **Aktualni uczestnicy:**\n{mentions}"
+            ),
+            view=view
+        )
+    except Exception as e:
+        print(f"[Błąd aktualizacji wiadomości loterii]: {e}")
+
+@tasks.loop(minutes=1)
+async def uruchom_loterie():
+    teraz = datetime.now()
+    if teraz.weekday() == 6 and teraz.hour == 17 and teraz.minute == 0:
+        for guild in bot.guilds:
+            kanal_loteria = discord.utils.get(guild.text_channels, name="🎰┃loteria")
+            kanal_chat = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+
+            uczestnicy = lottery_participants.get(guild.id, set())
+            if not uczestnicy:
+                if kanal_loteria:
+                    await kanal_loteria.send("🎰 Loteria zakończona – brak uczestników spełniających wymagania.")
+                continue
+
+            zwyciezca = random.choice(list(uczestnicy))
+            wynik = (
+                f"🎉 **WYNIKI LOTERII!**\n"
+                f"Nagrodę **100k** zgarnia: <@{zwyciezca}>!\n"
+                f"Gratulacje i do zobaczenia za tydzień! 🤑"
+            )
+
+            if kanal_loteria:
+                await kanal_loteria.send(wynik)
+            if kanal_chat:
+                await kanal_chat.send(f"@everyone {wynik}")
+
+@tasks.loop(minutes=1)
+async def przypomnienie_loteria():
+    teraz = datetime.now()
+    if teraz.hour == 16 and teraz.minute == 0:
+        for guild in bot.guilds:
+            kanal = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+            if not kanal:
+                continue
+
+            dni_do_niedzieli = (6 - teraz.weekday()) % 7
+            next_lottery_time = (teraz + timedelta(days=dni_do_niedzieli)).replace(hour=17, minute=0, second=0)
+            if next_lottery_time < teraz:
+                next_lottery_time += timedelta(days=7)
+            czas_do = next_lottery_time - teraz
+            godziny, reszta = divmod(czas_do.total_seconds(), 3600)
+            minuty = int(reszta // 60)
+
+            await kanal.send(
+                f"@everyone 🎰 **Loteria Tygodniowa** trwa!\n"
+                f"📋 Do rozstrzygnięcia pozostało: **{int(godziny)}h {minuty}min**\n"
+                f"Kliknij przycisk w kanale <#🎰┃loteria> i weź udział – jeśli masz minimum 10 punktów aktywności! 🍀💸"
+            )
+
+import discord
+from discord.ext import commands
+from discord import app_commands
+from datetime import datetime, timedelta
+
+class WystawMnieView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.zgloszeni = {}  # user_id: datetime
+
+    def format_lista(self):
+        if not self.zgloszeni:
+            return "*Brak zgłoszonych.*"
+        lines = ["**📋 Aktualna lista zgłoszonych na capta:**\n"]
+        for idx, (user_id, czas) in enumerate(self.zgloszeni.items(), start=1):
+            user = self.bot.get_user(user_id)
+            czas_str = czas.strftime("%H:%M")
+            lines.append(f"`{idx}.` **{user.mention}** ⏰ {czas_str}")
+        lines.append("\n❗ Możesz się wypisać tylko przez 15 minut od zgłoszenia.")
+        lines.append("🔄 Lista aktualizuje się automatycznie.")
+        return "\n".join(lines)
+
+    async def update_message(self, interaction):
+        embed = discord.Embed(title="🎯 Wystawienie na Capta", description=self.format_lista(), color=0x2ecc71)
+        await interaction.message.edit(embed=embed, view=self)
+
+    @discord.ui.button(label="✅ Wystaw mnie", style=discord.ButtonStyle.success)
+    async def wystaw(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.zgloszeni[interaction.user.id] = datetime.now()
+        await self.update_message(interaction)
+        await interaction.response.defer()
+
+    @discord.ui.button(label="❌ Wypisz mnie", style=discord.ButtonStyle.danger)
+    async def wypisz(self, interaction: discord.Interaction, button: discord.ui.Button):
+        now = datetime.now()
+        zapisany = self.zgloszeni.get(interaction.user.id)
+
+        if not zapisany:
+            await interaction.response.send_message("Nie jesteś zapisany.", ephemeral=True)
+            return
+
+        if now - zapisany > timedelta(minutes=15):
+            await interaction.response.send_message("Minęło ponad 15 minut od zgłoszenia. Nie możesz się już wypisać.", ephemeral=True)
+            return
+
+        del self.zgloszeni[interaction.user.id]
+        await self.update_message(interaction)
+        await interaction.response.defer()
 
 
-def main() -> None:
-    if not TOKEN:
-        raise RuntimeError("Brak zmiennej DISCORD_TOKEN w Railway → Variables")
-    bot.run(TOKEN, log_handler=None)
+class WystawMnie(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="wystawmnie", description="Zapisz się na capta z dynamiczną listą zgłoszeń")
+    async def wystawmnie(self, interaction: discord.Interaction):
+        view = WystawMnieView(self.bot)
+        embed = discord.Embed(title="🎯 Wystawienie na Capta", description=view.format_lista(), color=0x2ecc71)
+        await interaction.response.send_message(embed=embed, view=view)
+
+async def setup(bot):
+    await bot.add_cog(WystawMnie(bot))
+
+@green.error
+@blue.error
+@white.error
+async def cooldown_error(interaction: discord.Interaction, error):
+    if isinstance(error, commands.CommandOnCooldown):
+        remaining = round(error.retry_after)
+        minutes, seconds = divmod(remaining, 60)
+        await interaction.response.send_message(
+            f"⏳ Możesz użyć tej komendy ponownie za **{int(minutes)}m {int(seconds)}s**.",
+            ephemeral=True
+        )
+
+class ResetLoteriiModal(discord.ui.Modal, title="Reset Loterii"):
+    kod = discord.ui.TextInput(label="Wpisz hasło", placeholder="...", required=True)
+
+    def __init__(self, interaction, view):
+        super().__init__()
+        self.interaction = interaction
+        self.view = view
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.kod.value != "LoteriaHeaven":
+            await interaction.response.send_message("❌ Niepoprawny kod resetu.", ephemeral=True)
+            return
+
+        guild_id = self.interaction.guild.id
+        user = interaction.user
+        czas = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        lottery_participants[guild_id] = set()
+        if guild_id in lottery_messages:
+            del lottery_messages[guild_id]
+        save_lottery_data()
+
+        kanal = discord.utils.get(self.interaction.guild.text_channels, name="🎰┃loteria")
+        if kanal:
+            async for msg in kanal.history(limit=20):
+                if msg.author == self.interaction.client.user:
+                    await msg.delete()
+
+        await loteria(self.interaction)
+        await interaction.response.send_message("✅ Loteria została zresetowana!", ephemeral=True)
+
+        print(f"[{czas}] 🔁 RESET LOTERII przez {user.name} ({user.id}) na serwerze {self.interaction.guild.name}")
 
 
-if __name__ == "__main__":
-    main()
+import os
+import asyncio
+
+async def main():
+    async with bot:
+        await bot.load_extension("afk")  # załaduj cog afk.py
+        await bot.start(os.getenv("DISCORD_TOKEN"))
+
+asyncio.run(main())
 
