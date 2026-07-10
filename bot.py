@@ -176,12 +176,12 @@ async def white(interaction: discord.Interaction):
     await zakoncz_kontrakt(interaction, "kurier_white", punkty, "white", "🤍", 0xffffff)
 
 
-@tree.command(name="auto", description="Zakończ kradzież auta (+3 pkt)")
+@tree.command(name="auto", description="Zakończ kradzież auta (+1 pkt)")
 async def auto(interaction: discord.Interaction):
     await zakoncz_kontrakt(
         interaction,
         "kradzież auta",
-        3,
+        1,
         "auto",
         "🚗",
         0x3498db
@@ -871,7 +871,7 @@ class CaptView(View):
             description=(
                 f"👤 **Inicjator:** {capt['inicjator'].mention}\n"
                 f"👥 **Uczestnicy ({len(uczestnicy)}):** {mentions}\n\n"
-                f"📌 Za **capt wygrany** każdy uczestnik otrzymuje **6 pkt**, za **przegrany** – **2 pkt**."
+                f"📌 Za **CAPT wygrany** każdy uczestnik otrzymuje **2 pkt**, a za **przegrany** – **1 pkt**."
             ),
             color=0xe74c3c
         )
@@ -939,7 +939,7 @@ class CaptView(View):
                 f"👤 **Inicjator:** {capt['inicjator'].mention}\n"
                 f"👥 **Uczestnicy:** {mentions}\n\n"
                 f"🏁 CAPT został zakończony jako **{wynik}**!\n"
-                f"{'🥇 Każdy otrzymuje 6 pkt!' if wygrana else '🥈 Każdy otrzymuje 2 pkt!'}"
+                f"{'🥇 Każdy otrzymuje 2 pkt!' if wygrana else '🥈 Każdy otrzymuje 1 pkt!'}"
             ),
             color=kolor
         )
@@ -1093,7 +1093,7 @@ async def loteria(interaction: discord.Interaction):
         "**🎰 LOTERIA TYGODNIOWA!**\n"
         "Kliknij przycisk poniżej, aby zapisać się do loterii!\n"
         "🔒 Wymagane minimum 20 punktów aktywności.\n"
-        "🎁 Nagroda: 50k – losowanie w każdą niedzielę o 17:00!\n\n"
+        "🎁 Nagroda: 100k – losowanie w każdą niedzielę o 17:00!\n\n"
         f"⏳ **Do losowania pozostało:** {int(godziny)}h {minuty}min\n\n"
         f"📋 **Aktualni uczestnicy:**\n{mentions}",
         view=view
