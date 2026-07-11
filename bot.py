@@ -356,27 +356,37 @@ import json
 active_kable_contracts = {}  # {guild_id: {"inicjator": user, "uczestnicy": set, "msg_id": id, "message": msg_obj}}
 
 async def przypomnienie_kable(guild):
+    # Poczekaj 30 minut od rozpoczęcia kontraktu.
+    await asyncio.sleep(30 * 60)
+
     kontrakt = active_kable_contracts.get(guild.id)
     if not kontrakt:
         return
 
-    kanal = discord.utils.get(guild.text_channels, name="🎯┃kontrakty-aktywność")
-    if not kanal:
+    pozostali = 5 - len(kontrakt["uczestnicy"])
+    if pozostali <= 0:
         return
 
-    for i in range(3):
-        if guild.id not in active_kable_contracts:
-            break
-        pozostali = 5 - len(kontrakt["uczestnicy"])
-        if pozostali <= 0:
-            break
+    kanal_chat = discord.utils.get(guild.text_channels, name="💬┃chat-rodzinny")
+    kanal_kontrakty = discord.utils.get(guild.text_channels, name="🎯┃kontrakty-aktywność")
 
-        await kanal.send(
-            f"@everyone 📦 Kontrakt **Paczki** aktywny!\n"
-            f"Potrzeba jeszcze **{pozostali}** osób do zamknięcia kontraktu.\n"
-            f"Kliknij powyżej przycisk **Zapisz się na paczki**, jeśli już fizycznie dostarczyłeś paczkę. 📥"
-        )
-        await asyncio.sleep(20 * 60)
+    if not kanal_chat or not kanal_kontrakty:
+        return
+
+    message = kontrakt.get("message")
+    link_do_kontraktu = (
+        f"[Kliknij tutaj, aby przejść do kontraktu]({message.jump_url})"
+        if message else kanal_kontrakty.mention
+    )
+
+    await kanal_chat.send(
+        f"@everyone 📦 **Kontrakt Paczki nadal jest aktywny!**\n"
+        f"⏳ Minęło już **30 minut**, a kontrakt wciąż nie został zamknięty.\n"
+        f"👥 Potrzeba jeszcze **{pozostali}** osób do kompletu **5/5**.\n"
+        f"📍 Kontrakt znajduje się na kanale {kanal_kontrakty.mention}.\n"
+        f"🔗 {link_do_kontraktu}\n\n"
+        f"Kliknij przycisk **Zapisz się na paczki**, jeżeli faktycznie bierzesz udział w aktywności. 📥"
+    )
 
 class KableKontraktView(View):
     def __init__(self, interaction, guild_id):
@@ -448,14 +458,27 @@ class KableKontraktView(View):
             return
 
         uczestnicy = kontrakt["uczestnicy"]
+
+        # Kontrakt Paczki można zakończyć dopiero przy dokładnie 5 zapisanych osobach.
+        if len(uczestnicy) < 5:
+            await interaction.response.send_message(
+                f"❌ Do zakończenia kontraktu **Paczki** potrzeba 5 osób. "
+                f"Aktualnie zapisanych: **{len(uczestnicy)}/5**.",
+                ephemeral=True
+            )
+            return
+
         for uid in uczestnicy:
             str_uid = str(uid)
             init_user(str_uid)
+
+            # Wewnętrzny klucz pozostaje jako „kable”, aby zachować zgodność
+            # ze starym plikiem dane.json. W statystykach wyświetla się jako „paczki”.
             user_data[str_uid]["punkty"] += 3
             user_data[str_uid]["kable"] += 1
 
-        with open("dane.json", "w") as f:
-            json.dump(user_data, f)
+        with open("dane.json", "w", encoding="utf-8") as f:
+            json.dump(user_data, f, ensure_ascii=False, indent=2)
 
         uczestnicy_mentions = ", ".join([f"<@{uid}>" for uid in uczestnicy])
         embed = discord.Embed(
@@ -464,6 +487,8 @@ class KableKontraktView(View):
                 f"Kontrakt **paczki** został zakończony przez inicjatora.\n\n"
                 f"👤 **Inicjator:** {kontrakt['inicjator'].mention}\n"
                 f"👥 **Uczestnicy:** {uczestnicy_mentions}\n\n"
+                f"⭐ Każdy uczestnik otrzymał **3 punkty**.\n"
+                f"📊 Statystyki zostały automatycznie zaktualizowane.\n\n"
                 f"🎉 Gratulacje dla wszystkich uczestników!"
             ),
             color=0xf39c12
@@ -1345,5 +1370,7 @@ async def main():
     async with bot:
         await bot.load_extension("afk")  # załaduj cog afk.py
         await bot.start(os.getenv("DISCORD_TOKEN"))
+
+asyncio.run(main())
 
 asyncio.run(main())
